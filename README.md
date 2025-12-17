@@ -2,7 +2,7 @@
 
 A powerful, web-based DXF file viewer built with Vanilla JavaScript and HTML5 Canvas. This application allows users to view, analyze, and measure AutoCAD DXF files directly in the browser with a modern, dark-themed UI.
 
-![DXF Viewer Screenshot](https://via.placeholder.com/800x450?text=DXF+Viewer+Screenshot) *<!-- Replace with actual screenshot -->*
+![DXF Viewer Screenshot](screenshot.PNG) *<!-- Replace with actual screenshot -->*
 
 ## Features
 
