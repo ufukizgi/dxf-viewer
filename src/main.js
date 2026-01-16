@@ -51,6 +51,11 @@ class DXFViewerApp {
         const fileUrl = urlParams.get('file');
 
         if (fileUrl) {
+            // Hide file upload button when file is loaded via URL parameter
+            const fileUploadContainer = document.querySelector('.file-upload-container');
+            if (fileUploadContainer) {
+                fileUploadContainer.style.display = 'none';
+            }
             this.loadUrl(fileUrl);
         }
     }

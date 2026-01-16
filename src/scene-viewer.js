@@ -367,7 +367,7 @@ export class SceneViewer {
         worldBefore.z = 0; // Assume 2D plane for pivot
 
         // 2. Apply Zoom
-        const zoomScale = 0.99; // 1% Zoom factor
+        const zoomScale = 0.96; // 2% Zoom factor (doubled speed)
         if (event.deltaY < 0) {
             this.camera.zoom /= zoomScale; // Zoom In
         } else {
