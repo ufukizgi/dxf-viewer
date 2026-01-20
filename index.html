@@ -71,6 +71,15 @@
                             <path d="M12 4v15" />
                         </svg>
                     </button>
+
+                    <!-- Print Button -->
+                    <button class="icon-btn tool-btn" id="print-btn" title="Print" data-i18n-title="print">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9V2h12v7" />
+                            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                            <rect x="6" y="14" width="12" height="8" />
+                        </svg>
+                    </button>
                 </div>
 
                 <!-- Layers Dropdown -->
@@ -170,23 +179,140 @@
                     </div>
                 </div>
 
-                <!-- Entity Tree Panel -->
-                <div class="panel flex-1 min-h-0 flex flex-col mt-4">
+                <!-- Weight Calculation Panel (shows only when closed geometry is selected) -->
+                <div id="weight-panel" class="panel flex-1 min-h-0 flex flex-col mt-4 hidden">
                     <div class="panel-header">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path
-                                d="M7 21h10a2 2 0 0 0 2-2V9.414a1 1 0 0 0-.293-.707l-5.414-5.414A1 1 0 0 0 12.586 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2z"
-                                stroke-width="2" />
-                            <path d="M12 11h4" stroke-width="2" />
-                            <path d="M12 16h4" stroke-width="2" />
-                            <path d="M8 11h.01" stroke-width="3" stroke-linecap="round" />
-                            <path d="M8 16h.01" stroke-width="3" stroke-linecap="round" />
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20.9 19.1L4.1 19c-1 0-1.7.9-1.5 1.9L2.9 22H21l.4-1.1c.1-1-.6-1.8-1.5-1.8z" />
+                            <path d="M16 11l-4-7-4 7" />
+                            <path d="M12 4v15" />
                         </svg>
-                        <h3 data-i18n="entityTree">Entity Tree</h3>
+                        <h3 data-i18n="weightTitle">Weight Calculation</h3>
                     </div>
-                    <div class="panel-content flex-1 overflow-y-auto" id="entity-tree-content">
-                        <div class="p-4 text-center text-gray-400 text-sm" data-i18n="noEntities">
-                            No entities loaded
+                    <div class="panel-content flex-1 overflow-y-auto p-3 space-y-4">
+                        <!-- Material Selector -->
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1" data-i18n="material">Material</label>
+                            <select id="material-selector"
+                                class="w-full bg-black/20 border border-white/10 rounded px-2 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
+                                <option value="aluminum">Aluminium (2.7)</option>
+                                <option value="steel">Steel (7.85)</option>
+                                <option value="stainless">Stainless Steel (8.0)</option>
+                                <option value="copper">Copper (8.96)</option>
+                                <option value="brass">Brass (8.73)</option>
+                                <option value="plastic">Plastic (1.04)</option>
+                            </select>
+                        </div>
+
+                        <hr class="border-white/10">
+
+                        <!-- Mandrel -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="mandrel">Zıvana (Mandrel)</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-mandrel">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Area -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="area">Net Area</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-area">0.00</span>
+                                <span class="text-xs text-gray-500 ml-1" data-i18n="unitMm2">mm²</span>
+                            </div>
+                        </div>
+
+                        <!-- Weight -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="weight">Weight</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-weight">0.000</span>
+                                <span class="text-xs text-gray-500 ml-1" data-i18n="unitKgM">kg/m</span>
+                            </div>
+                        </div>
+
+                        <!-- Bounding Circle Diameter -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium">DU (Ø)</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-diameter">0.00</span>
+                                <span class="text-xs text-gray-500 ml-1">mm</span>
+                            </div>
+                        </div>
+
+                        <!-- Outer Perimeter -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="outerPerimeter">Dış Çevre</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-perimeter">0.00</span>
+                                <span class="text-xs text-gray-500 ml-1">mm</span>
+                            </div>
+                        </div>
+
+                        <!-- Shape Factor -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="shapeFactor">Şekil Faktörü</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-shapefactor">0.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Total Perimeter -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="totalPerimeter">Toplam Çevre</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono" id="val-totalperimeter">0.00</span>
+                                <span class="text-xs text-gray-500 ml-1">mm</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Add Template Button (fixed at bottom) -->
+                    <div class="p-3 border-t border-white/10 mt-auto">
+                        <button id="add-template-btn"
+                            class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <span data-i18n="addTemplate">Antet Ekle</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Scale Display Panel (shows during template placement mode) -->
+                <div id="scale-panel" class="panel flex-1 min-h-0 flex flex-col mt-4 hidden">
+                    <div class="panel-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 3L3 21" />
+                            <path d="M21 3h-6m6 0v6" />
+                            <path d="M3 21h6m-6 0v-6" />
+                        </svg>
+                        <h3 data-i18n="scale">Ölçek</h3>
+                    </div>
+                    <div class="panel-content flex-1 overflow-y-auto p-3 space-y-4">
+                        <div class="text-center text-gray-400 text-sm mb-4" data-i18n="scrollToScale">
+                            Ölçeklemek için scroll kullanın
+                        </div>
+
+                        <!-- Template Scale -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-3 flex justify-between items-center border border-white/5">
+                            <span class="text-gray-200 font-medium" data-i18n="templateScale">Şablon Ölçeği</span>
+                            <div class="text-right">
+                                <span class="text-cyan-400 font-mono text-xl" id="val-scale">1:1</span>
+                            </div>
+                        </div>
+
+                        <div class="text-center text-gray-400 text-sm mt-4" data-i18n="clickToPlace">
+                            Yerleştirmek için tıklayın
                         </div>
                     </div>
                 </div>
@@ -236,69 +362,39 @@
         </footer>
     </div>
 
-    <!-- Weight Calculation Popup -->
-    <div id="weight-popup"
-        class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-900/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-4 w-[320px] z-[9999]">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="text-sm font-semibold text-white" data-i18n="weightTitle">Weight Calculation</h3>
-            <button id="weight-popup-close" class="text-gray-400 hover:text-white transition-colors">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-            </button>
-        </div>
 
-        <div class="space-y-4">
-            <!-- Material Selector -->
-            <div>
-                <label class="block text-xs text-gray-400 mb-1" data-i18n="material">Material</label>
-                <select id="material-selector"
-                    class="w-full bg-black/20 border border-white/10 rounded px-2 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
-                    <option value="aluminum">Aluminium (2.7)</option>
-                    <option value="steel">Steel (7.85)</option>
-                    <option value="stainless">Stainless Steel (8.0)</option>
-                    <option value="copper">Copper (8.96)</option>
-                    <option value="brass">Brass (8.73)</option>
-                    <option value="plastic">Plastic (1.04)</option>
-                </select>
+
+    <!-- Template Selection Popup -->
+    <div id="template-popup"
+        class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl p-5 w-[320px]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-sm font-semibold text-white" data-i18n="selectTemplate">Antet Seç</h3>
+                <button id="template-popup-close" class="text-gray-400 hover:text-white transition-colors">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
 
-            <hr class="border-white/10">
-
-            <!-- Mandrel -->
-            <div class="flex justify-between text-sm items-center">
-                <span class="text-gray-400" data-i18n="mandrel">Zıvana (Mandrel)</span>
-                <span class="text-white font-mono" id="val-mandrel">0</span>
-            </div>
-
-            <!-- Area -->
-            <div class="flex justify-between text-sm items-center">
-                <span class="text-gray-400" data-i18n="area">Net Area</span>
-                <div class="text-right">
-                    <span class="text-white font-mono" id="val-area">0.00</span>
-                    <span class="text-xs text-gray-500 ml-1" data-i18n="unitMm2">mm²</span>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs text-gray-400 mb-1" data-i18n="templateFile">Antet Dosyası</label>
+                    <select id="template-selector"
+                        class="w-full bg-black/20 border border-white/10 rounded px-2 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
+                        <option value="" data-i18n="loadingTemplates">Yükleniyor...</option>
+                    </select>
                 </div>
-            </div>
 
-            <!-- Weight -->
-            <div
-                class="bg-gradient-to-r from-white/10 to-transparent rounded-lg p-3 flex justify-between items-center mt-2 border border-white/5">
-                <span class="text-gray-200 font-medium" data-i18n="weight">Weight</span>
-                <div class="text-right">
-                    <span class="text-green-400 font-bold font-mono text-xl" id="val-weight">0.000</span>
-                    <span class="text-xs text-gray-400 ml-1" data-i18n="unitKgM">kg/m</span>
-                </div>
-            </div>
-
-            <!-- Bounding Circle Diameter -->
-            <div
-                class="bg-gradient-to-r from-white/10 to-transparent rounded-lg p-3 flex justify-between items-center mt-2 border border-white/5">
-                <span class="text-gray-200 font-medium">DU (Ø)</span>
-                <div class="text-right">
-                    <span class="text-cyan-400 font-mono" id="val-diameter">0.00</span>
-                    <span class="text-xs text-gray-500 ml-1">mm</span>
+                <div class="flex gap-2 mt-4">
+                    <button id="template-cancel-btn"
+                        class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                        data-i18n="cancel">İptal</button>
+                    <button id="template-ok-btn"
+                        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                        data-i18n="ok">Tamam</button>
                 </div>
             </div>
         </div>

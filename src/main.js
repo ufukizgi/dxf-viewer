@@ -39,7 +39,7 @@ class DXFViewerApp {
         this.snappingManager = new SnappingManager(this.viewer);
         this.measurementManager = new MeasurementManager(this.viewer, this.snappingManager);
         this.objectInfoManager = new ObjectInfoManager(this.viewer);
-        this.weightManager = new WeightManager(this.viewer, this.languageManager, () => {
+        this.weightManager = new WeightManager(this.viewer, this.languageManager, this.snappingManager, () => {
             this.clearSelection();
         });
         this.weightManager.init();

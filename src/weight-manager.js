@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { MATERIALS, DEFAULT_MATERIAL_ID } from './materials.js';
 
 export class WeightManager {
-    constructor(viewer, languageManager, onCloseCallback) {
+    constructor(viewer, languageManager, snappingManager, onCloseCallback) {
         this.viewer = viewer;
         this.languageManager = languageManager;
+        this.snappingManager = snappingManager;
         this.onCloseCallback = onCloseCallback;
 
         this.currentMaterialId = DEFAULT_MATERIAL_ID;
@@ -21,6 +22,21 @@ export class WeightManager {
             depthTest: false,
             side: THREE.DoubleSide
         });
+
+        // Template placement mode
+        this.templateMode = false;
+        this.templateGroup = null;
+        this.templateCenter = null;
+        this.geometryCenter = null;
+        this.templateScale = 1.0;
+        this.scrollSteps = 0;
+        this.originalSceneState = null;
+
+        // Print mode
+        this.printMode = false;
+
+        // Calculated values storage for placeholders
+        this.calculatedValues = {};
     }
 
     init() {
@@ -29,8 +45,19 @@ export class WeightManager {
     }
 
     createUI() {
-        this.popup = document.getElementById('weight-popup');
+        this.panel = document.getElementById('weight-panel');
         this.btn = document.getElementById('weight-btn');
+
+        // Template popup elements
+        this.templatePopup = document.getElementById('template-popup');
+        this.templateSelector = document.getElementById('template-selector');
+        this.addTemplateBtn = document.getElementById('add-template-btn');
+
+        // Scale panel
+        this.scalePanel = document.getElementById('scale-panel');
+
+        // Print button
+        this.printBtn = document.getElementById('print-btn');
     }
 
     bindEvents() {
@@ -38,7 +65,7 @@ export class WeightManager {
             this.btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (this.isEnabled) {
-                    this.togglePopup();
+                    this.togglePanel();
                 }
             });
         }
@@ -51,10 +78,32 @@ export class WeightManager {
             });
         }
 
-        const closeBtn = document.getElementById('weight-popup-close');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => this.close());
+        // Add Template button
+        if (this.addTemplateBtn) {
+            this.addTemplateBtn.addEventListener('click', () => this.openTemplatePopup());
         }
+
+        // Template popup close/cancel buttons
+        const closeBtn = document.getElementById('template-popup-close');
+        const cancelBtn = document.getElementById('template-cancel-btn');
+        const okBtn = document.getElementById('template-ok-btn');
+
+        if (closeBtn) closeBtn.addEventListener('click', () => this.closeTemplatePopup());
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.closeTemplatePopup());
+        if (okBtn) okBtn.addEventListener('click', () => this.onTemplateSelected());
+
+        // Print button
+        if (this.printBtn) {
+            this.printBtn.addEventListener('click', () => this.enterPrintMode());
+        }
+
+        // ESC key handler for template mode
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.templateMode) {
+                this.exitTemplatePlacementMode(true);
+            }
+        });
+
     }
 
     update(selectedObjects) {
@@ -63,6 +112,7 @@ export class WeightManager {
         const closedGeoms = this.filterClosedGeometries(this.selectedObjects);
         this.isEnabled = closedGeoms.length > 0;
 
+        // Update button state
         if (this.btn) {
             if (this.isEnabled) {
                 this.btn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -70,23 +120,27 @@ export class WeightManager {
             } else {
                 this.btn.classList.add('opacity-50', 'cursor-not-allowed');
                 this.btn.classList.remove('hover:bg-white/10');
-                if (this.popup && !this.popup.classList.contains('hidden')) {
-                    this.close();
-                }
             }
         }
 
-        if (this.popup && !this.popup.classList.contains('hidden')) {
-            this.calculateAndRender();
+        // Show/hide weight panel based on whether closed geometries are selected
+        if (this.panel) {
+            if (this.isEnabled) {
+                this.panel.classList.remove('hidden');
+                this.calculateAndRender();
+            } else {
+                this.panel.classList.add('hidden');
+                this.clearVisualization();
+            }
         }
     }
 
-    togglePopup() {
-        if (!this.popup) return;
+    togglePanel() {
+        if (!this.panel || !this.isEnabled) return;
 
-        const isHidden = this.popup.classList.contains('hidden');
+        const isHidden = this.panel.classList.contains('hidden');
         if (isHidden) {
-            this.popup.classList.remove('hidden');
+            this.panel.classList.remove('hidden');
             this.calculateAndRender();
             this.visualize();
         } else {
@@ -95,12 +149,1079 @@ export class WeightManager {
     }
 
     close() {
-        if (this.popup) this.popup.classList.add('hidden');
+        if (this.panel) this.panel.classList.add('hidden');
         this.clearVisualization();
         if (this.onCloseCallback) {
             this.onCloseCallback();
         }
     }
+
+    // Template popup methods
+    async openTemplatePopup() {
+        if (!this.templatePopup) return;
+
+        // Load template list
+        await this.loadTemplateList();
+
+        // Show popup
+        this.templatePopup.classList.remove('hidden');
+    }
+
+    closeTemplatePopup() {
+        if (this.templatePopup) {
+            this.templatePopup.classList.add('hidden');
+        }
+    }
+
+    async loadTemplateList() {
+        if (!this.templateSelector) return;
+
+        // Known templates in the templates folder
+        // In a real server environment, you'd fetch this list from the server
+        const templates = [
+            { name: 'A4 Dikey', file: 'A4 Dikey.dxf' },
+            { name: 'A4 Yatay', file: 'A4 Yatay.dxf' }
+        ];
+
+        // Clear existing options
+        this.templateSelector.innerHTML = '';
+
+        if (templates.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Antet bulunamadı';
+            this.templateSelector.appendChild(option);
+            return;
+        }
+
+        templates.forEach(template => {
+            const option = document.createElement('option');
+            option.value = `templates/${template.file}`;
+            option.textContent = template.name;
+            this.templateSelector.appendChild(option);
+        });
+    }
+
+    onTemplateSelected() {
+        const selectedFile = this.templateSelector?.value;
+        if (!selectedFile) {
+            this.closeTemplatePopup();
+            return;
+        }
+
+        console.log(`[WeightManager] Template selected: ${selectedFile}`);
+        this.selectedTemplatePath = selectedFile;
+        this.closeTemplatePopup();
+
+        // Enter template placement mode
+        this.enterTemplatePlacementMode();
+    }
+
+    // ========================================
+    // TEMPLATE PLACEMENT MODE
+    // ========================================
+
+    async enterTemplatePlacementMode() {
+        if (!this.selectedTemplatePath) {
+            console.error('[WeightManager] Cannot enter template mode: no template selected');
+            return;
+        }
+
+        console.log('[WeightManager] Entering template placement mode (NEW WORKFLOW)');
+        console.log('[WeightManager] Selected objects count:', this.selectedObjects?.length);
+
+        this.templateMode = true;
+        this.scrollSteps = 0;
+        this.templateScale = 1.0;
+        this._hasLoggedPosition = false; // Reset debug flag
+
+        // Step 1: Clone selected entities into floatingGroup
+        this.floatingGroup = new THREE.Group();
+        this.floatingGroup.name = 'FloatingGeometries';
+
+        // Clone selected objects (previewMesh area)
+        if (this.selectedObjects && this.selectedObjects.length > 0) {
+            for (const obj of this.selectedObjects) {
+                const clone = obj.clone();
+                clone.userData.isFloatingClone = true;
+
+                // Sanitize Material:
+                // If original was highlighted, it has a cloned material with Cyan color.
+                // We want to restore the original color and make it a "permanent" material.
+                if (obj.userData.originalColor) {
+                    // Clone material to detach from original
+                    clone.material = clone.material.clone();
+
+                    // Restore original color
+                    clone.material.color.copy(obj.userData.originalColor);
+
+                    // Sync userData.originalColor to match the restored material color exactly
+                    // This fixes issues where JSON serialization in clone() might convert Color to plain object,
+                    // or if originalColor was stale. We want the UNHOVER color to be what we see now.
+                    clone.userData.originalColor = clone.material.color.clone();
+
+                    // Remove "isClonedMaterial" flag so SceneViewer treats it as a normal object
+                    // (This ensures auto-contrast logic works: Black/White swapping)
+                    clone.userData.isClonedMaterial = false;
+                    delete clone.userData.isClonedMaterial;
+
+                    // Also ensure we don't carry over temporary highlight flags if any
+                    // But keep crucial data like entity type
+                }
+
+                this.floatingGroup.add(clone);
+            }
+        } else {
+            console.warn('[WeightManager] No selected objects to clone for placement!');
+        }
+
+        // Calculate floating group center
+        if (this.floatingGroup.children.length > 0) {
+            const floatBox = new THREE.Box3().setFromObject(this.floatingGroup);
+            this.floatingCenter = floatBox.getCenter(new THREE.Vector3());
+            console.log(`[WeightManager] Cloned ${this.floatingGroup.children.length} entities, center:`, this.floatingCenter);
+        } else {
+            console.warn('[WeightManager] Floating group is empty!');
+            this.floatingCenter = new THREE.Vector3(0, 0, 0);
+        }
+
+        // Step 2: Clear dxfGroup (remove all existing entities)
+        this.clearDxfGroup();
+
+        // Step 3: Load template DXF into dxfGroup (fixed position)
+        await this.loadTemplateDXF(this.selectedTemplatePath);
+
+        // Step 4: Add floating group to scene (will follow mouse)
+        this.viewer.scene.add(this.floatingGroup);
+        console.log('[WeightManager] Floating group added to scene');
+
+        // Show scale panel, hide weight panel
+        if (this.panel) this.panel.classList.add('hidden');
+        if (this.scalePanel) this.scalePanel.classList.remove('hidden');
+
+        // Start mouse following (floating geometries follow mouse)
+        this.startMouseFollowing();
+
+        // Update scale display
+        this.updateScaleDisplay();
+
+        // Fit all to view
+        this.viewer.zoomExtents();
+
+        console.log('[WeightManager] Template placement mode active - geometries follow mouse');
+    }
+
+    clearDxfGroup() {
+        if (!this.viewer.dxfGroup) return;
+
+        // Store references but don't dispose (we might need them later)
+        const children = [...this.viewer.dxfGroup.children];
+        for (const child of children) {
+            this.viewer.dxfGroup.remove(child);
+        }
+        console.log(`[WeightManager] Cleared ${children.length} entities from dxfGroup`);
+    }
+
+    storeOriginalSceneState() {
+        this.originalSceneState = {
+            backgroundColor: this.viewer.renderer.getClearColor(new THREE.Color()).getHex(),
+            objectStates: []
+        };
+
+        // Store visibility state of all DXF objects
+        if (this.viewer.dxfGroup) {
+            this.viewer.dxfGroup.traverse((obj) => {
+                if (obj.isMesh || obj.isLine || obj.isSprite) {
+                    this.originalSceneState.objectStates.push({
+                        object: obj,
+                        visible: obj.visible,
+                        color: obj.material?.color?.getHex()
+                    });
+                }
+            });
+        }
+    }
+
+    updateFloatingPosition(event) {
+        if (!this.templateMode || !this.floatingGroup) return;
+
+        // Get world position from mouse using THREE.js unprojection
+        const rect = this.viewer.renderer.domElement.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Create a vector at mouse position and unproject to world
+        const vec = new THREE.Vector3(x, y, 0);
+        vec.unproject(this.viewer.camera);
+
+        // Position floating group so its center is at cursor
+        // Account for scaling and original center offset
+        const scaledCenterX = this.floatingCenter.x * this.templateScale;
+        const scaledCenterY = this.floatingCenter.y * this.templateScale;
+
+        // Log one-time debug for position
+        if (!this._hasLoggedPosition) {
+            console.log('[WeightManager] Updating floating position:', {
+                mouseNDC: { x, y },
+                mouseWorld: vec,
+                floatingCenter: this.floatingCenter,
+                scale: this.templateScale,
+                finalPos: {
+                    x: vec.x - scaledCenterX,
+                    y: vec.y - scaledCenterY
+                }
+            });
+            this._hasLoggedPosition = true;
+        }
+
+        // Set Z to 0.1 to ensure it sits above the template (Z=0)
+        this.floatingGroup.position.set(
+            vec.x - scaledCenterX,
+            vec.y - scaledCenterY,
+            0.1
+        );
+    }
+    hideNonSelectedObjects() {
+        // Hide all DXF objects
+        if (this.viewer.dxfGroup) {
+            this.viewer.dxfGroup.traverse((obj) => {
+                if (obj.isMesh || obj.isLine || obj.isSprite) {
+                    obj.visible = false;
+                }
+            });
+        }
+
+        // Keep preview mesh and debug circle visible (geometry stays at 1:1)
+        if (this.previewMesh) this.previewMesh.visible = true;
+        if (this.debugCircle) this.debugCircle.visible = true;
+    }
+
+    async loadTemplateDXF(path) {
+        try {
+            console.log(`[WeightManager] Loading template: ${path}`);
+
+            // Fetch template file with cache busting
+            const url = `${path}?t=${Date.now()}`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`Failed to fetch template: ${response.status}`);
+
+            const dxfText = await response.text();
+
+            // Parse using DxfParser
+            const { DxfParser } = await import('dxf-parser');
+            const parser = new DxfParser();
+            const dxf = parser.parseSync(dxfText);
+
+            // Create loader for generating entities
+            const { DxfLoader } = await import('./dxf-loader.js');
+            const loader = new DxfLoader();
+            const templateEntities = loader.generateThreeEntities(dxf);
+
+            // Add template entities directly to dxfGroup for OSNAP
+            const children = [...templateEntities.children];
+            for (const child of children) {
+                child.userData.isTemplateEntity = true;
+                this.viewer.dxfGroup.add(child);
+            }
+
+            // Store reference to template center for later use
+            const box = new THREE.Box3().setFromObject(this.viewer.dxfGroup);
+            this.templateCenter = box.getCenter(new THREE.Vector3());
+
+            console.log(`[WeightManager] Template loaded with ${children.length} entities into dxfGroup`);
+
+        } catch (err) {
+            console.error('[WeightManager] Error loading template:', err);
+        }
+    }
+
+    startMouseFollowing() {
+        this._mouseMoveHandler = (e) => this.updateFloatingPosition(e);
+        this._mouseClickHandler = (e) => this.placeFloatingGeometries(e);
+        this._mouseWheelHandler = (e) => this.handleFloatingScroll(e);
+
+        const canvas = this.viewer.renderer.domElement;
+        canvas.addEventListener('mousemove', this._mouseMoveHandler);
+        canvas.addEventListener('click', this._mouseClickHandler);
+        // Use capture phase to intercept wheel event BEFORE viewport's zoom handler
+        canvas.addEventListener('wheel', this._mouseWheelHandler, { passive: false, capture: true });
+    }
+
+    stopMouseFollowing() {
+        const canvas = this.viewer.renderer.domElement;
+        if (this._mouseMoveHandler) canvas.removeEventListener('mousemove', this._mouseMoveHandler);
+        if (this._mouseClickHandler) canvas.removeEventListener('click', this._mouseClickHandler);
+        // Must use same capture option when removing
+        if (this._mouseWheelHandler) canvas.removeEventListener('wheel', this._mouseWheelHandler, { capture: true });
+    }
+
+    handleFloatingScroll(event) {
+        if (!this.templateMode) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        // Each scroll step = ±5% of original scale
+        const delta = event.deltaY > 0 ? -1 : 1;
+        this.scrollSteps += delta;
+        this.templateScale = 1.0 + (0.05 * this.scrollSteps);
+        this.templateScale = Math.max(0.1, Math.min(10, this.templateScale)); // Clamp 0.1 to 10
+
+        this.applyFloatingScale();
+        this.updateScaleDisplay();
+    }
+
+    applyFloatingScale() {
+        if (this.floatingGroup) {
+            this.floatingGroup.scale.set(this.templateScale, this.templateScale, 1);
+        }
+    }
+
+    updateScaleDisplay() {
+        const scaleEl = document.getElementById('val-scale');
+        if (scaleEl) {
+            // Format as 1:X or X:1
+            if (this.templateScale >= 1) {
+                scaleEl.textContent = `${this.templateScale.toFixed(1)}:1`;
+            } else {
+                scaleEl.textContent = `1:${(1 / this.templateScale).toFixed(1)}`;
+            }
+        }
+    }
+
+    placeFloatingGeometries(event) {
+        if (!this.templateMode || !this.floatingGroup) return;
+
+        console.log('[WeightManager] Placing floating geometries');
+
+        // Stop mouse following
+        this.stopMouseFollowing();
+
+        // Get final floating group position and scale
+        const position = this.floatingGroup.position.clone();
+        const scale = this.templateScale;
+
+        console.log('[WeightManager] Placing geometries:', {
+            position: { x: position.x, y: position.y },
+            scale: scale
+        });
+
+        // Merge floating entities into dxfGroup with scaling applied
+        this.mergeFloatingIntoDxfGroup(position, scale);
+
+        // Update template placeholders (text in template)
+        this.updateTemplatePlaceholders();
+
+        // Store scale value for printing
+        this.calculatedValues['val-scale'] = scale >= 1 ?
+            `${scale.toFixed(1)}:1` :
+            `1:${(1 / scale).toFixed(1)}`;
+
+        // Exit placement mode
+        this.templateMode = false;
+
+        // Show weight panel again, hide scale panel
+        if (this.panel) this.panel.classList.remove('hidden');
+        if (this.scalePanel) this.scalePanel.classList.add('hidden');
+
+        // Fit to view
+        this.viewer.zoomExtents();
+
+        console.log('[WeightManager] Placement complete - OSNAP works on all entities');
+    }
+
+    mergeFloatingIntoDxfGroup(position, scale) {
+        if (!this.floatingGroup || !this.viewer.dxfGroup) {
+            console.warn('[WeightManager] Cannot merge floating: missing floatingGroup or dxfGroup');
+            return;
+        }
+
+        // Collect all children to transfer
+        const children = [...this.floatingGroup.children];
+
+        for (const child of children) {
+            // Apply scale to geometry (group scale was visual, now bake it)
+            child.scale.multiplyScalar(scale);
+
+            // Apply position offset (child position is relative to group)
+            child.position.x = (child.position.x * scale) + position.x;
+            child.position.y = (child.position.y * scale) + position.y;
+            child.position.z = (child.position.z * scale) + position.z;
+
+            // Update matrices
+            child.updateMatrix();
+            child.updateMatrixWorld(true);
+
+            // Mark as placed geometry
+            child.userData.isPlacedGeometry = true;
+            child.userData.placementScale = scale;
+
+            // Add to dxfGroup
+            this.viewer.dxfGroup.add(child);
+        }
+
+        // Remove floating group from scene
+        this.viewer.scene.remove(this.floatingGroup);
+        this.floatingGroup = null;
+
+        console.log(`[WeightManager] Merged ${children.length} floating entities into dxfGroup`);
+    }
+
+    mergeTemplateIntoDxfGroup(position, scale) {
+        if (!this.templateGroup || !this.viewer.dxfGroup) {
+            console.warn('[WeightManager] Cannot merge: missing templateGroup or dxfGroup');
+            return;
+        }
+
+        // Collect all children to move (can't modify while iterating)
+        const children = [...this.templateGroup.children];
+
+        for (const child of children) {
+            // Apply scale to geometry
+            child.scale.multiplyScalar(scale);
+
+            // Apply position offset
+            child.position.x = child.position.x * scale + position.x;
+            child.position.y = child.position.y * scale + position.y;
+            child.position.z = child.position.z * scale + position.z;
+
+            // Update world matrix
+            child.updateMatrix();
+            child.updateMatrixWorld(true);
+
+            // Mark as template entity for identification
+            child.userData.isTemplateEntity = true;
+            child.userData.templateScale = scale;
+
+            // Add to dxfGroup
+            this.viewer.dxfGroup.add(child);
+        }
+
+        // Remove empty templateGroup from scene
+        this.viewer.scene.remove(this.templateGroup);
+        this.templateGroup = null;
+
+        console.log(`[WeightManager] Merged ${children.length} entities into dxfGroup`);
+    }
+
+    updateTemplatePlaceholders() {
+        if (!this.viewer.dxfGroup) return;
+
+        console.log('[WeightManager] === TEMPLATE PLACEHOLDER DEBUG ===');
+
+        // Collect calculated values
+        const values = {
+            'val-mandrel': document.getElementById('val-mandrel')?.textContent || '0',
+            'val-area': document.getElementById('val-area')?.textContent || '0.00',
+            'val-weight': document.getElementById('val-weight')?.textContent || '0.000',
+            'val-diameter': document.getElementById('val-diameter')?.textContent || '0.00',
+            'val-perimeter': document.getElementById('val-perimeter')?.textContent || '0.00',
+            'val-totalperimeter': document.getElementById('val-totalperimeter')?.textContent || '0.00',
+            'val-shapefactor': document.getElementById('val-shapefactor')?.textContent || '0.00',
+            'val-scale': this.templateScale >= 1 ?
+                `${this.templateScale.toFixed(1)}:1` :
+                `1:${(1 / this.templateScale).toFixed(1)}`
+        };
+
+        console.log('[WeightManager] Placeholder values:', values);
+        this.calculatedValues = values;
+
+        // Debug: List all objects in template
+        let textCount = 0;
+        let meshCount = 0;
+        let totalChildren = 0;
+
+        // Iterate over dxfGroup instead of templateGroup
+        this.viewer.dxfGroup.traverse((obj) => {
+            totalChildren++;
+
+            // Only process template entities
+            if (!obj.userData.isTemplateEntity) return;
+
+            // Log any mesh (text is created as Mesh in DxfLoader)
+            if (obj.isMesh) {
+                meshCount++;
+            }
+
+            // Log any object with TEXT/MTEXT in userData
+            if (obj.userData.type === 'TEXT' || obj.userData.type === 'MTEXT') {
+                textCount++;
+                console.log(`[WeightManager] Found TEXT entity:`, {
+                    isMesh: obj.isMesh,
+                    isSprite: obj.isSprite,
+                    type: obj.type,
+                    visible: obj.visible,
+                    text: obj.userData.entity?.text
+                });
+            }
+        });
+
+        console.log(`[WeightManager] Template children: ${totalChildren}, Meshes: ${meshCount}, TextEntities: ${textCount}`);
+
+        // If no TEXT entities found, log all object types for debugging
+        if (textCount === 0) {
+            console.log('[WeightManager] No TEXT entities found. Object types in template:');
+            this.viewer.dxfGroup.traverse((obj) => {
+                if (obj.userData.isTemplateEntity && obj.userData.type) {
+                    console.log(`  - ${obj.userData.type} (visible: ${obj.visible})`);
+                }
+            });
+        }
+
+        // Find TEXT/MTEXT objects in template and replace placeholders
+        // DxfLoader creates Mesh for TEXT, not Sprite
+        this.viewer.dxfGroup.traverse((obj) => {
+            // Only process template entities
+            if (!obj.userData.isTemplateEntity) return;
+
+            if (obj.isMesh && (obj.userData.type === 'TEXT' || obj.userData.type === 'MTEXT')) {
+                // Get original text
+                let text = obj.userData.originalText || obj.userData.entity?.text || '';
+
+                // Replace %placeholder% patterns
+                let replaced = false;
+                for (const [key, value] of Object.entries(values)) {
+                    const pattern = new RegExp(`%${key}%`, 'gi');
+                    if (pattern.test(text)) {
+                        text = text.replace(pattern, value);
+                        replaced = true;
+                    }
+                }
+
+                if (replaced) {
+                    console.log(`[WeightManager] Updating placeholder text to: "${text}"`);
+                    obj.userData.updatedText = text;
+
+                    // Regenerate texture with new text
+                    this.regenerateTextTexture(obj, text);
+                }
+            }
+        });
+
+        console.log('[WeightManager] === END PLACEHOLDER DEBUG ===');
+    }
+
+    regenerateTextTexture(mesh, newText) {
+        // Get mesh properties
+        const height = mesh.userData.entity?.height || 2.5;
+
+        // Create canvas texture with new text
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        const fontSizePx = 80;
+
+        ctx.font = `Bold ${fontSizePx}px Arial`;
+        const metrics = ctx.measureText(newText);
+        const textWidth = metrics.width;
+        const textHeight = fontSizePx * 1.4;
+
+        canvas.width = textWidth + 20;
+        canvas.height = textHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = `Bold ${fontSizePx}px Arial`;
+
+        // Use white color for visibility
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(newText, 10, canvas.height / 2);
+
+        // Update texture
+        const newTexture = new THREE.CanvasTexture(canvas);
+        newTexture.minFilter = THREE.LinearFilter;
+        newTexture.magFilter = THREE.LinearFilter;
+
+        // Dispose old texture
+        if (mesh.material.map) {
+            mesh.material.map.dispose();
+        }
+        mesh.material.map = newTexture;
+        mesh.material.needsUpdate = true;
+
+        // Update geometry size
+        const aspect = canvas.width / canvas.height;
+        const w = height * aspect;
+        const h = height;
+
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(w, h);
+        mesh.geometry.translate(w / 2, 0, 0);
+    }
+
+    restoreObjectVisibility() {
+        if (!this.originalSceneState) return;
+
+        // Restore visibility (but not colors - those change in print mode)
+        for (const state of this.originalSceneState.objectStates) {
+            state.object.visible = state.visible;
+        }
+    }
+
+    exitTemplatePlacementMode(cancelled = false) {
+        console.log(`[WeightManager] Exiting template placement mode, cancelled: ${cancelled}`);
+
+        this.templateMode = false;
+        this.stopMouseFollowing();
+
+        if (cancelled) {
+            // Remove template
+            if (this.templateGroup) {
+                this.viewer.scene.remove(this.templateGroup);
+                this.templateGroup = null;
+            }
+
+            // Restore original visibility
+            this.restoreObjectVisibility();
+        }
+
+        // Show weight panel, hide scale panel
+        if (this.panel) this.panel.classList.remove('hidden');
+        if (this.scalePanel) this.scalePanel.classList.add('hidden');
+
+        console.log('[WeightManager] Template placement mode exited');
+    }
+
+    // ========================================
+    // PRINT MODE - Rectangle Selection
+    // ========================================
+
+    enterPrintMode() {
+        console.log('[WeightManager] Entering print selection mode');
+        this.printMode = true;
+        this.printSelectionStart = null;
+        this.printSelectionEnd = null;
+
+        // Create selection box element if not exists
+        if (!this.printSelectionBox) {
+            this.printSelectionBox = document.createElement('div');
+            this.printSelectionBox.className = 'print-selection-box';
+            this.printSelectionBox.style.cssText = `
+                position: fixed;
+                border: 2px dashed #ff6600;
+                background: rgba(255, 102, 0, 0.1);
+                pointer-events: none;
+                display: none;
+                z-index: 1000;
+            `;
+            document.body.appendChild(this.printSelectionBox);
+        }
+
+        // Show instruction to user
+        this.showPrintInstruction();
+
+        // Bind mouse events for selection - using click for OSNAP support
+        this.printClick = (e) => this.onPrintSelectionStart(e);
+        this.printMouseMove = (e) => this.onPrintSelectionMove(e);
+        this.printKeyDown = (e) => {
+            if (e.key === 'Escape') this.cancelPrintSelection();
+        };
+
+        const canvas = this.viewer.renderer.domElement;
+        canvas.addEventListener('click', this.printClick);
+        canvas.addEventListener('mousemove', this.printMouseMove);
+        document.addEventListener('keydown', this.printKeyDown);
+
+        // Change cursor
+        canvas.style.cursor = 'crosshair';
+    }
+
+    showPrintInstruction() {
+        // Show a floating instruction message
+        if (!this.printInstructionEl) {
+            this.printInstructionEl = document.createElement('div');
+            this.printInstructionEl.style.cssText = `
+                position: fixed;
+                top: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 1001;
+            `;
+            document.body.appendChild(this.printInstructionEl);
+        }
+        this.printInstructionEl.textContent = 'Yazdırma alanını seçmek için dikdörtgen çizin. ESC ile iptal.';
+        this.printInstructionEl.style.display = 'block';
+    }
+
+    hidePrintInstruction() {
+        if (this.printInstructionEl) {
+            this.printInstructionEl.style.display = 'none';
+        }
+    }
+
+    getSnapOrScreenPoint(e) {
+        const rect = this.viewer.renderer.domElement.getBoundingClientRect();
+
+        // Default: Mouse position relative to canvas
+        let screenX = e.clientX - rect.left;
+        let screenY = e.clientY - rect.top;
+
+        // Check for active snap
+        if (this.snappingManager && this.snappingManager.activeSnap) {
+            const snapPoint = this.snappingManager.activeSnap.point;
+
+            // Project 3D snap point to 2D screen coordinates
+            const vector = snapPoint.clone();
+            vector.project(this.viewer.camera);
+
+            screenX = (vector.x * .5 + .5) * rect.width;
+            screenY = (-(vector.y * .5) + .5) * rect.height;
+        }
+
+        return { x: screenX, y: screenY };
+    }
+
+    onPrintSelectionStart(e) {
+        if (!this.printMode) return;
+
+        // Get coordinates (snapped if available)
+        const point = this.getSnapOrScreenPoint(e);
+        const screenX = point.x;
+        const screenY = point.y;
+
+        const rect = this.viewer.renderer.domElement.getBoundingClientRect();
+
+
+
+        // First click - set start point
+        if (!this.printSelectionStart) {
+            this.printSelectionStart = { screenX, screenY };
+            this.printSelectionBox.style.display = 'block';
+            // Use client coordinates for fixed position
+            // We need to convert back from canvas-relative to client-relative for fixed positioning
+            this.printSelectionBox.style.left = `${rect.left + screenX}px`;
+            this.printSelectionBox.style.top = `${rect.top + screenY}px`;
+            this.printSelectionBox.style.width = '0px';
+            this.printSelectionBox.style.height = '0px';
+
+            // Update instruction
+            if (this.printInstructionEl) {
+                this.printInstructionEl.textContent = 'İkinci köşeyi tıklayın. ESC ile iptal.';
+            }
+            return;
+        }
+
+        // Second click - set end point and capture
+        const x1 = Math.min(this.printSelectionStart.screenX, screenX);
+        const y1 = Math.min(this.printSelectionStart.screenY, screenY);
+        const x2 = Math.max(this.printSelectionStart.screenX, screenX);
+        const y2 = Math.max(this.printSelectionStart.screenY, screenY);
+
+        const width = x2 - x1;
+        const height = y2 - y1;
+
+        // Minimum selection size
+        if (width < 10 || height < 10) { // Reduced min size for precision
+            console.log('[WeightManager] Selection too small, resetting');
+            this.printSelectionStart = null;
+            this.printSelectionBox.style.display = 'none';
+            if (this.printInstructionEl) {
+                this.printInstructionEl.textContent = 'Yazdırma alanını seçmek için iki köşeye tıklayın. ESC ile iptal.';
+            }
+            return;
+        }
+
+        console.log('[WeightManager] Print selection:', { x1, y1, x2, y2, width, height });
+
+        // Capture and print the selected area
+        this.captureAndPrint(x1, y1, width, height);
+    }
+
+    onPrintSelectionMove(e) {
+        if (!this.printMode || !this.printSelectionStart) return;
+
+        // Get coordinates (snapped if available)
+        const point = this.getSnapOrScreenPoint(e);
+        const currentX = point.x;
+        const currentY = point.y;
+
+        const rect = this.viewer.renderer.domElement.getBoundingClientRect();
+
+        const left = Math.min(this.printSelectionStart.screenX, currentX);
+        const top = Math.min(this.printSelectionStart.screenY, currentY);
+        const width = Math.abs(currentX - this.printSelectionStart.screenX);
+        const height = Math.abs(currentY - this.printSelectionStart.screenY);
+
+        // Fixed position uses viewport coordinates
+        this.printSelectionBox.style.left = `${rect.left + left}px`;
+        this.printSelectionBox.style.top = `${rect.top + top}px`;
+        this.printSelectionBox.style.width = `${width}px`;
+        this.printSelectionBox.style.height = `${height}px`;
+    }
+
+    onPrintSelectionEnd(e) {
+        // Not used in 2-click mode
+    }
+
+    cancelPrintSelection() {
+        console.log('[WeightManager] Print selection cancelled');
+        this.exitPrintMode();
+    }
+
+    captureAndPrint(x, y, width, height) {
+        console.log('[WeightManager] Capturing area for HIGH-RES print');
+
+        // Target: 300 DPI for A4 printing (Standard High Quality)
+        // User requested lower resolution ~3000x4000
+        const TARGET_DPI = 300;
+        const SCREEN_DPI = 96;
+        const SCALE_FACTOR = TARGET_DPI / SCREEN_DPI; // ~6.25x
+
+        const targetWidth = Math.round(width * SCALE_FACTOR);
+        const targetHeight = Math.round(height * SCALE_FACTOR);
+
+        console.log(`[WeightManager] Scale factor: ${SCALE_FACTOR}, Target: ${targetWidth}x${targetHeight}`);
+
+        // Store original renderer size
+        const renderer = this.viewer.renderer;
+        const canvas = renderer.domElement;
+        const originalWidth = canvas.width;
+        const originalHeight = canvas.height;
+        const originalStyleWidth = canvas.style.width;
+        const originalStyleHeight = canvas.style.height;
+
+        // Calculate the world coordinates of the selection area
+        const rect = canvas.getBoundingClientRect();
+
+        // Convert screen coords to normalized device coords (-1 to 1)
+        const ndcX1 = ((x) / rect.width) * 2 - 1;
+        const ndcY1 = -((y) / rect.height) * 2 + 1;
+        const ndcX2 = ((x + width) / rect.width) * 2 - 1;
+        const ndcY2 = -((y + height) / rect.height) * 2 + 1;
+
+        // Unproject to get world coordinates
+        const topLeft = new THREE.Vector3(ndcX1, ndcY1, 0).unproject(this.viewer.camera);
+        const bottomRight = new THREE.Vector3(ndcX2, ndcY2, 0).unproject(this.viewer.camera);
+
+        // Store original camera state
+        const origCamLeft = this.viewer.camera.left;
+        const origCamRight = this.viewer.camera.right;
+        const origCamTop = this.viewer.camera.top;
+        const origCamBottom = this.viewer.camera.bottom;
+        const origCamZoom = this.viewer.camera.zoom;
+        const origCamPos = this.viewer.camera.position.clone();
+
+        // Hide preview elements
+        const previewWasVisible = this.previewMesh ? this.previewMesh.visible : false;
+        if (this.previewMesh) this.previewMesh.visible = false;
+
+        // Store original background and colors
+        const originalBg = this.viewer.scene.background ? this.viewer.scene.background.clone() : null;
+        const colorBackup = [];
+
+        this.viewer.scene.traverse((obj) => {
+            if (obj.material && obj.material.color) {
+                colorBackup.push({ obj, color: obj.material.color.getHex() });
+                obj.material.color.setHex(0x000000);
+            }
+        });
+
+        // Set white background
+        this.viewer.scene.background = new THREE.Color(0xffffff);
+
+        // Resize renderer to target high-resolution
+        renderer.setSize(targetWidth, targetHeight, false);
+        canvas.style.width = targetWidth + 'px';
+        canvas.style.height = targetHeight + 'px';
+
+        // Adjust camera frustum to show only the selected area
+        const worldWidth = Math.abs(bottomRight.x - topLeft.x);
+        const worldHeight = Math.abs(topLeft.y - bottomRight.y);
+        const centerX = (topLeft.x + bottomRight.x) / 2;
+        const centerY = (topLeft.y + bottomRight.y) / 2;
+
+        this.viewer.camera.left = -worldWidth / 2;
+        this.viewer.camera.right = worldWidth / 2;
+        this.viewer.camera.top = worldHeight / 2;
+        this.viewer.camera.bottom = -worldHeight / 2;
+        this.viewer.camera.zoom = 1;
+        this.viewer.camera.position.set(centerX, centerY, origCamPos.z);
+        this.viewer.camera.updateProjectionMatrix();
+
+        // Render at high resolution
+        renderer.render(this.viewer.scene, this.viewer.camera);
+
+        // Capture high-res image
+        const imageData = canvas.toDataURL('image/png');
+
+        // Restore camera
+        this.viewer.camera.left = origCamLeft;
+        this.viewer.camera.right = origCamRight;
+        this.viewer.camera.top = origCamTop;
+        this.viewer.camera.bottom = origCamBottom;
+        this.viewer.camera.zoom = origCamZoom;
+        this.viewer.camera.position.copy(origCamPos);
+        this.viewer.camera.updateProjectionMatrix();
+
+        // Restore renderer size
+        renderer.setSize(originalWidth, originalHeight, false);
+        canvas.style.width = originalStyleWidth;
+        canvas.style.height = originalStyleHeight;
+
+        // Restore background and colors
+        this.viewer.scene.background = originalBg;
+        for (const { obj, color } of colorBackup) {
+            obj.material.color.setHex(color);
+        }
+
+        // Restore preview mesh
+        if (this.previewMesh) this.previewMesh.visible = previewWasVisible;
+
+        // Render restored state
+        renderer.render(this.viewer.scene, this.viewer.camera);
+
+        // Open print window with high-res image
+        this.openPrintWindow(imageData, targetWidth, targetHeight);
+
+        // Exit print mode
+        this.exitPrintMode();
+    }
+
+    openPrintWindow(imageData, width, height) {
+        // Open new window with image for printing
+        const printWindow = window.open('', '_blank', `width=${width},height=${height}`);
+        if (!printWindow) {
+            alert('Popup engelleyici aktif. Lütfen izin verin.');
+            return;
+        }
+
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Print Debug - ${width}x${height}</title>
+
+                <style>
+                    /* ===================== */
+                    /* PRINT STYLES (A4 REAL) */
+                    /* ===================== */
+                    @media print {
+                        @page {
+                            size: ${width > height ? '297mm 210mm' : '210mm 297mm'};
+                            margin: 0;
+                        }
+
+                        html, body {
+                            width: 100%;
+                            height: 100%;
+                            margin: 0;
+                            padding: 0;
+                        }
+
+                        body {
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            background: white;
+                        }
+
+                        img {
+                            width: 100%;
+                            height: 100%;
+                            object-fit: cover; /* BOŞLUK İSTEMİYORSAN ŞART */
+                        }
+
+                        .no-print {
+                            display: none !important;
+                        }
+                    }
+
+                    /* ===================== */
+                    /* SCREEN PREVIEW STYLES */
+                    /* ===================== */
+                    @media screen {
+                        body {
+                            margin: 0;
+                            background: #eee;
+                            height: 100vh;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        }
+
+                        img {
+                            max-width: 90%;
+                            max-height: 90vh;
+                            background: white;
+                            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+                        }
+
+                        .controls {
+                            position: fixed;
+                            top: 20px;
+                            right: 20px;
+                            background: white;
+                            padding: 10px;
+                            border-radius: 4px;
+                            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+                            z-index: 100;
+                            font-family: Arial, sans-serif;
+                        }
+
+                        button {
+                            padding: 8px 14px;
+                            font-size: 13px;
+                            border: none;
+                            border-radius: 4px;
+                            cursor: pointer;
+                            color: white;
+                        }
+
+                        .print-btn { background: #4CAF50; }
+                        .close-btn { background: #f44336; margin-left: 8px; }
+                    }
+                </style>
+            </head>
+
+            <body>
+                <div class="controls no-print">
+                    <div style="font-size:12px; color:#666; margin-bottom:6px;">
+                        ${width} × ${height}px<br>
+                        ${Math.round(width / 96)} × ${Math.round(height / 96)} inç @ 96DPI
+                    </div>
+                    <button class="print-btn" onclick="window.print()">🖨️ Yazdır / PDF</button>
+                    <button class="close-btn" onclick="window.close()">Kapat</button>
+                </div>
+
+                <img src="${imageData}" alt="Print Image">
+
+            </body>
+            </html>
+            `);
+        printWindow.document.close();
+
+    }
+
+    exitPrintMode() {
+        console.log('[WeightManager] Exiting print mode');
+        this.printMode = false;
+
+        // Remove event listeners
+        const canvas = this.viewer.renderer.domElement;
+        if (this.printClick) canvas.removeEventListener('click', this.printClick);
+        if (this.printMouseMove) canvas.removeEventListener('mousemove', this.printMouseMove);
+        if (this.printKeyDown) document.removeEventListener('keydown', this.printKeyDown);
+
+        // Reset cursor
+        canvas.style.cursor = 'default';
+
+        // Hide selection box
+        if (this.printSelectionBox) {
+            this.printSelectionBox.style.display = 'none';
+        }
+
+        // Hide instruction
+        this.hidePrintInstruction();
+
+        // Reset selection state
+        this.printSelectionStart = null;
+        this.printSelectionEnd = null;
+    }
+
 
     filterClosedGeometries(objects) {
         const results = [];
@@ -153,10 +1274,12 @@ export class WeightManager {
 
         const items = closedGeoms.map(geomEntry => {
             const area = this.calculateArea(geomEntry);
-            console.log(`  - Type: ${geomEntry.type}, Area: ${area.toFixed(2)}`);
+            const perimeter = this.calculatePerimeter(geomEntry);
+            console.log(`  - Type: ${geomEntry.type}, Area: ${area.toFixed(2)}, Perimeter: ${perimeter.toFixed(2)}`);
             return {
                 geomEntry: geomEntry,
-                area: area
+                area: area,
+                perimeter: perimeter
             };
         });
 
@@ -165,21 +1288,36 @@ export class WeightManager {
         const outer = items[0];
         const inner = items.slice(1);
 
-        console.log(`[WeightManager] Outer area: ${outer.area.toFixed(2)}, Inner count: ${inner.length}`);
+        console.log(`[WeightManager] Outer area: ${outer.area.toFixed(2)}, Outer perimeter: ${outer.perimeter.toFixed(2)}, Inner count: ${inner.length}`);
 
         const outerArea = outer.area;
         const innerAreaSum = inner.reduce((sum, item) => sum + item.area, 0);
         const netArea = outerArea - innerAreaSum;
 
+        // Outer perimeter (dış çevre) - the perimeter of the largest geometry
+        const outerPerimeter = outer.perimeter;
+
+        // Total perimeter (toplam çevre) - sum of all perimeters (inner + outer)
+        const totalPerimeter = items.reduce((sum, item) => sum + item.perimeter, 0);
+
         console.log(`[WeightManager] Net area: ${netArea.toFixed(2)} (${outerArea.toFixed(2)} - ${innerAreaSum.toFixed(2)})`);
+        console.log(`[WeightManager] Outer perimeter: ${outerPerimeter.toFixed(2)}, Total perimeter: ${totalPerimeter.toFixed(2)}`);
 
         const mandrelCount = Math.max(0, closedGeoms.length - 1);
         const material = MATERIALS.find(m => m.id === this.currentMaterialId) || MATERIALS[0];
         const weight = (netArea * material.density) / 1000;
 
+        // Shape factor: Total Perimeter (cm) / Weight (kg/m)
+        // totalPerimeter is in mm, convert to cm by dividing by 10
+        const perimeterCm = totalPerimeter / 10;
+        const shapeFactor = weight > 0 ? perimeterCm / weight : 0;
+
         this.updateDOM('val-mandrel', mandrelCount);
         this.updateDOM('val-area', netArea.toFixed(2));
         this.updateDOM('val-weight', weight.toFixed(3));
+        this.updateDOM('val-perimeter', outerPerimeter.toFixed(2));
+        this.updateDOM('val-totalperimeter', totalPerimeter.toFixed(2));
+        this.updateDOM('val-shapefactor', shapeFactor.toFixed(2));
 
         this.calculationResult = { outer: outer.geomEntry, inner: inner.map(i => i.geomEntry) };
         this.visualize();
@@ -405,6 +1543,85 @@ export class WeightManager {
         }
 
         return 0;
+    }
+
+    calculatePerimeter(geomEntry) {
+        if (geomEntry.type === 'single') {
+            return this.calculateSinglePerimeter(geomEntry.objects[0]);
+        }
+
+        if (geomEntry.type === 'chain') {
+            return this.calculateChainPerimeter(geomEntry.vertices);
+        }
+
+        return 0;
+    }
+
+    calculateSinglePerimeter(obj) {
+        const type = obj.userData.type;
+        const entity = obj.userData.entity;
+
+        if (type === 'CIRCLE') {
+            return 2 * Math.PI * entity.radius;
+        }
+
+        if (type === 'LWPOLYLINE' || type === 'POLYLINE') {
+            if (entity && entity.vertices && entity.vertices.length > 0) {
+                const v = entity.vertices;
+                const n = v.length;
+                let perimeter = 0;
+
+                for (let i = 0; i < n; i++) {
+                    const j = (i + 1) % n;
+                    const p1 = v[i], p2 = v[j];
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const chord = Math.hypot(dx, dy);
+
+                    const bulge = v[i].bulge || 0;
+                    if (bulge !== 0 && chord > 0) {
+                        // Arc length calculation
+                        const theta = 4 * Math.atan(Math.abs(bulge));
+                        const radius = chord / (2 * Math.sin(theta / 2));
+                        const arcLength = radius * theta;
+                        perimeter += arcLength;
+                    } else {
+                        perimeter += chord;
+                    }
+                }
+
+                return perimeter;
+            }
+        }
+        return 0;
+    }
+
+    calculateChainPerimeter(vertices) {
+        const n = vertices.length;
+        if (n < 2) return 0;
+
+        let perimeter = 0;
+
+        for (let i = 0; i < n; i++) {
+            const j = (i + 1) % n;
+            const p1 = vertices[i], p2 = vertices[j];
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const chord = Math.hypot(dx, dy);
+
+            const bulge = vertices[i].bulge || 0;
+            if (bulge !== 0 && chord > 0) {
+                // Arc length calculation
+                const theta = 4 * Math.atan(Math.abs(bulge));
+                const radius = chord / (2 * Math.sin(theta / 2));
+                const arcLength = radius * theta;
+                perimeter += arcLength;
+            } else {
+                perimeter += chord;
+            }
+        }
+
+        return perimeter;
     }
 
     calculateSingleArea(obj) {

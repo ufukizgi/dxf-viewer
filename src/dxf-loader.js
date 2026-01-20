@@ -44,7 +44,16 @@ export class DxfLoader {
         const group = new THREE.Group();
         if (!dxf || !dxf.entities) return group;
 
-        // console.log('DXF parsed (dxf-json):', dxf);
+        // DEBUG: Log all entity types from parser
+        const entityTypes = {};
+        for (const entity of dxf.entities) {
+            entityTypes[entity.type] = (entityTypes[entity.type] || 0) + 1;
+            // Log MTEXT specifically
+            if (entity.type === 'MTEXT' || entity.type === 'TEXT') {
+                console.log(`🔤 DXF Parser found ${entity.type}:`, entity.text, entity);
+            }
+        }
+        console.log('📊 DXF Entity types from parser:', entityTypes);
 
         // Store blocks for INSERT references
         this.blocks = dxf.blocks || {};
@@ -93,7 +102,10 @@ export class DxfLoader {
             case 'HATCH':
                 object = this.createHatch(entity, material); break;
             case 'MTEXT':
-                object = this.createMText(entity, color); break;
+                console.log('[convertEntity] Processing MTEXT:', entity.text);
+                object = this.createMText(entity, color);
+                console.log('[convertEntity] MTEXT result:', object);
+                break;
             case 'TEXT':
                 object = this.createText(entity, color); break;
             case 'INSERT':
@@ -416,26 +428,19 @@ export class DxfLoader {
     createMText(entity, color) {
         if (!entity.text) return null;
 
-        // MTEXT can have complex formatting codes (e.g. \A1; \P for newline etc)
-        // We strip them for viewer simplicity.
-        // Simple regex to removing formatting?
-        // \^[A-Z\s]+; matches formatting?
-        // MText content often starts with { ... } or contains \P (paragraph), \L, \O etc.
         let raw = entity.text;
 
-        // Very basic strip:
-        // Replace \P with newline? Canvas doesn't do newlines well without Logic.
-        // Replace newline with space for single line label?
+        // Decode DXF Unicode escape sequences like \U+00C7 -> Ç
+        raw = raw.replace(/\\U\+([0-9A-Fa-f]{4})/g, (match, hex) => {
+            return String.fromCharCode(parseInt(hex, 16));
+        });
+
+        // Strip MTEXT formatting codes
         let clean = raw.replace(/\\P/g, ' ').replace(/\\L/g, '').replace(/\\O/g, '');
-        // Remove braces
         clean = clean.replace(/^{|}$/g, '');
-        // Remove \A...; codes
         clean = clean.replace(/\\[A-Za-z][^;]*;/g, '');
 
         const height = entity.height || 10;
-        // MText rotation is direction vector? Or rotation angle?
-        // Usually entity.rotation (degrees) is available for MText too if DxfParser handles it.
-        // If not, calculate from direction vector (xAxisX, xAxisY).
         let rotation = 0;
         if (entity.rotation) {
             rotation = entity.rotation * Math.PI / 180;
@@ -445,7 +450,17 @@ export class DxfLoader {
             rotation = Math.atan2(entity.xAxisY, entity.xAxisX);
         }
 
-        return this.generateTextLabel(clean, height, rotation, entity.insertPoint, color);
+        const position = entity.insertionPoint || entity.insertPoint || entity.position;
+        if (!position) return null;
+
+        const mesh = this.generateTextLabel(clean, height, rotation, position, color);
+
+        // Store original text for placeholder replacement
+        if (mesh) {
+            mesh.userData.originalText = clean;
+        }
+
+        return mesh;
     }
 
     generateTextLabel(text, height, rotation, position, colorVal) {
@@ -1797,24 +1812,6 @@ export class DxfLoader {
         return group;
     }
 
-    createMText(entity, color) {
-        if (!entity.text || !entity.position) return null;
-        // MTEXT can be multi-line
-        const text = entity.text.replace(/\\P/g, '\n'); // \\P is DXF line break
-        const height = entity.height || 10;
-        const position = entity.position;
-        const rotation = entity.rotation || 0;
-
-        const sprite = this.createTextSprite(text, height, color);
-        sprite.position.set(position.x, position.y, position.z || 0);
-
-        if (rotation !== 0) {
-            sprite.rotation.z = rotation * Math.PI / 180;
-        }
-
-        sprite.userData = { text, height };
-        return sprite;
-    }
 
     createTextSprite(text, height, color, styleName = null) {
         // Create canvas

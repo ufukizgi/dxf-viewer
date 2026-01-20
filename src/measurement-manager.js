@@ -25,6 +25,7 @@ export class MeasurementManager {
         this.activeTool = tool;
         this.points = [];
         this.clearTemp();
+        this.activeScale = 1.0; // Reset scale
         console.log(`Measurement Tool Activated: ${tool}`);
     }
 
@@ -32,6 +33,7 @@ export class MeasurementManager {
         this.activeTool = null;
         this.points = [];
         this.clearTemp();
+        this.activeScale = 1.0;
 
         // Remove active state from measurement buttons
         const distanceBtn = document.querySelector('[data-i18n-title="measureDistance"]');
@@ -48,6 +50,7 @@ export class MeasurementManager {
         // Cancel current measurement but keep tool active
         this.points = [];
         this.clearTemp();
+        this.activeScale = 1.0;
     }
 
     handleMouseMove(pointerNDC, rayOrigin, rayDir) {
@@ -67,8 +70,11 @@ export class MeasurementManager {
                 const p2 = point;
                 const dist = p1.distanceTo(p2);
 
+                // Apply active scale (Inverse: if scale is 0.5, actual dist is double screen dist)
+                const realDist = dist / this.activeScale;
+
                 // Simple line P1->P2
-                this.tempMeasurement = this.createMeasurementVisual(p1, p2, dist.toFixed(3), true);
+                this.tempMeasurement = this.createMeasurementVisual(p1, p2, realDist.toFixed(3), true);
                 this.group.add(this.tempMeasurement);
 
             } else if (this.points.length === 2) {
@@ -77,14 +83,14 @@ export class MeasurementManager {
                 const p2 = this.points[1];
                 const placement = point;
 
-                // Smart Dimension Logic
-                const state = this.getDimensionState(p1, p2, placement);
+                // Smart Dimension Logic with Scale
+                const state = this.getDimensionState(p1, p2, placement, this.activeScale);
 
                 this.tempMeasurement = this.createDimensionVisual(state, true);
                 this.group.add(this.tempMeasurement);
             }
         }
-        // Angle Tool
+        // Angle Tool (No scaling needed for angles)
         else if (this.activeTool === 'angle') {
             if (this.points.length === 1) {
                 // Have Center, dragging Start
@@ -335,6 +341,38 @@ export class MeasurementManager {
         if (this.activeTool === 'distance') {
             if (this.points.length === 0) {
                 this.points.push(point); // P1
+
+                // Detect Scale from hitObject or Snapped Object
+                this.activeScale = 1.0; // Default
+
+                // Check if we hit an object or snapped to one
+                let targetObj = hitObject;
+                if (!targetObj && this.snappingManager && this.snappingManager.activeSnap) {
+                    targetObj = this.snappingManager.activeSnap.object;
+                }
+
+                if (targetObj) {
+                    // Check for placement scale (from WeightManager placement)
+                    if (targetObj.userData.placementScale) {
+                        this.activeScale = targetObj.userData.placementScale;
+                        console.log(`[MeasurementManager] Detected Placement Scale: ${this.activeScale}`);
+                    }
+                    // Check for template scale
+                    else if (targetObj.userData.templateScale) {
+                        this.activeScale = targetObj.userData.templateScale;
+                        console.log(`[MeasurementManager] Detected Template Scale: ${this.activeScale}`);
+                    }
+                    // Check parent if needed (though usually we put userData on the mesh)
+                    else if (targetObj.parent && targetObj.parent.userData.placementScale) {
+                        this.activeScale = targetObj.parent.userData.placementScale;
+                        console.log(`[MeasurementManager] Detected Parent Scale: ${this.activeScale}`);
+                    }
+                }
+
+                if (this.activeScale !== 1.0) {
+                    console.log(`[MeasurementManager] Using measurement scale: 1:${(1 / this.activeScale).toFixed(2)} (${this.activeScale})`);
+                }
+
             } else if (this.points.length === 1) {
                 if (this.points[0].distanceTo(point) < 0.001) return;
                 this.points.push(point); // P2
@@ -344,7 +382,7 @@ export class MeasurementManager {
                 const p2 = this.points[1];
                 const placement = point;
 
-                const state = this.getDimensionState(p1, p2, placement);
+                const state = this.getDimensionState(p1, p2, placement, this.activeScale);
                 const visual = this.createDimensionVisual(state, false);
                 this.group.add(visual);
 
@@ -354,13 +392,15 @@ export class MeasurementManager {
                     value: state.value,
                     visual,
                     // Store state metadata if needed for re-render
-                    stateType: state.type
+                    stateType: state.type,
+                    scale: this.activeScale
                 });
-                console.log(`Distance Measured (${state.type}): ${state.value}`);
+                console.log(`Distance Measured (${state.type}): ${state.value} (Scale: ${this.activeScale})`);
 
                 // Reset
                 this.points = [];
                 this.clearTemp();
+                this.activeScale = 1.0;
             }
         }
 
@@ -390,12 +430,16 @@ export class MeasurementManager {
                 // Helper to get line points (works for THREE.Line segments)
                 const getLinePts = (line) => {
                     const pos = line.geometry.attributes.position;
+                    // Check if indexed? Assuming non-indexed from dxf-loader for simple lines
+                    // DxfLoader uses BufferGeometry.
                     return [
                         new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0)),
                         new THREE.Vector3(pos.getX(1), pos.getY(1), pos.getZ(1))
                     ];
                 };
 
+                // We need to handle potential index access if geometry is indexed, but simple lines usually aren't.
+                // Re-implementing simplified logic from original file:
                 const [l1s, l1e] = getLinePts(l1);
                 const [l2s, l2e] = getLinePts(l2);
 
@@ -464,19 +508,21 @@ export class MeasurementManager {
     }
 
     // Smart Logic: Detect Horizontal / Vertical / Aligned
-    getDimensionState(p1, p2, mouse) {
+    getDimensionState(p1, p2, mouse, scale = 1.0) {
         const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
         const dir = new THREE.Vector3().subVectors(p2, p1);
         const len = dir.length();
 
         // Default (fallback)
         let type = 'aligned';
-        let val = len;
+        // Scaled Value
+        let val = len / scale;
+
         let dimP1 = p1.clone();
         let dimP2 = p2.clone();
         let angle = Math.atan2(dir.y, dir.x);
 
-        const arrowLen = 3.0; // Use const from top preferably, but redundant here is safe
+        const arrowLen = 3.0;
 
         if (len < 1e-6) return { type, value: 0, p1, p2, dimP1, dimP2, angle: 0, text: "0.000" };
 
@@ -527,7 +573,7 @@ export class MeasurementManager {
         // Calculate Geometry based on Type
         if (type === 'horizontal') {
             // Measure dx
-            val = Math.abs(p2.x - p1.x);
+            val = Math.abs(p2.x - p1.x) / scale;
             angle = 0;
             // Dim Line is at mouse.y
             dimP1 = new THREE.Vector3(p1.x, mouse.y, 0);
@@ -535,7 +581,7 @@ export class MeasurementManager {
 
         } else if (type === 'vertical') {
             // Measure dy
-            val = Math.abs(p2.y - p1.y);
+            val = Math.abs(p2.y - p1.y) / scale;
             angle = Math.PI / 2;
             // Dim Line is at mouse.x
             dimP1 = new THREE.Vector3(mouse.x, p1.y, 0);
@@ -544,10 +590,7 @@ export class MeasurementManager {
         } else {
             // Aligned
             type = 'aligned';
-            val = len;
-            // Project mouse onto normal line from mid? 
-            // Standard: Project mouse onto the line perpendicular to P1-P2 passing through mouse? No.
-            // Standard: Project P1 and P2 onto the line parallel to P1-P2 passing through mouse.
+            val = len / scale;
 
             // Line through Mouse parallel to Dir
             // P_proj = P + (Mouse - P).dot(normal) * normal

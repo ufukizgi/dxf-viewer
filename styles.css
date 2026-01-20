@@ -826,3 +826,65 @@ body {
     background-color: rgba(16, 185, 129, 0.1);
     border-style: dashed;
 }
+
+/* Print Styles - Hide UI, show only canvas at 1:1 scale */
+@media print {
+
+    /* Hide all UI elements */
+    .header,
+    .footer,
+    .sidebar,
+    .viewport-overlay,
+    .overlay-logo,
+    .selection-box,
+    #sidebar-floating-toggle,
+    .help-text {
+        display: none !important;
+    }
+
+    /* Reset body */
+    body {
+        background: white !important;
+        overflow: visible !important;
+    }
+
+    /* App container fills page */
+    .app-container {
+        display: block !important;
+        height: auto !important;
+    }
+
+    /* Main content fills space */
+    .main-content {
+        display: block !important;
+        width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Canvas container takes full width */
+    .viewport-container {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        background: white !important;
+    }
+
+    /* Canvas: 1mm = 1 DXF unit
+       Browser prints at 96 DPI by default
+       1 inch = 96px = 25.4mm
+       So 1mm = 96/25.4 ≈ 3.78px
+       We set the canvas to print at its natural size */
+    .viewport-canvas,
+    canvas {
+        width: 100% !important;
+        height: auto !important;
+        max-width: 100% !important;
+        page-break-inside: avoid !important;
+    }
+
+    /* Page setup for A4 */
+    @page {
+        size: A4;
+        margin: 10mm;
+    }
+}

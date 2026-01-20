@@ -128,7 +128,21 @@ export const translations = {
         "area": "Net Alan",
         "weight": "Gramaj",
         "unitMm2": "mm²",
-        "unitKgM": "kg/m"
+        "unitKgM": "kg/m",
+        "outerPerimeter": "Dış Çevre",
+        "shapeFactor": "Şekil Faktörü",
+        "totalPerimeter": "Toplam Çevre",
+        "addTemplate": "Antet Ekle",
+        "selectTemplate": "Antet Seç",
+        "templateFile": "Antet Dosyası",
+        "ok": "Tamam",
+        "cancel": "İptal",
+        "scale": "Ölçek",
+        "templateScale": "Şablon Ölçeği",
+        "scrollToScale": "Ölçeklemek için scroll kullanın",
+        "clickToPlace": "Yerleştirmek için tıklayın",
+        "print": "Yazdır",
+        "selectPrintArea": "Yazdırma alanı seçin"
     },
     en: {
         // Header / File
@@ -252,9 +266,23 @@ export const translations = {
         "material": "Material",
         "mandrel": "Mandrel",
         "area": "Net Area",
-        "weight": "Weight (Gramaj)",
+        "weight": "Weight",
         "unitMm2": "mm²",
-        "unitKgM": "kg/m"
+        "unitKgM": "kg/m",
+        "outerPerimeter": "Outer Perimeter",
+        "shapeFactor": "Shape Factor",
+        "totalPerimeter": "Total Perimeter",
+        "addTemplate": "Add Template",
+        "selectTemplate": "Select Template",
+        "templateFile": "Template File",
+        "ok": "OK",
+        "cancel": "Cancel",
+        "scale": "Scale",
+        "templateScale": "Template Scale",
+        "scrollToScale": "Use scroll to scale",
+        "clickToPlace": "Click to place",
+        "print": "Print",
+        "selectPrintArea": "Select print area"
     }
 };
 
