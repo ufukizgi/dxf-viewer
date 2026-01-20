@@ -712,10 +712,11 @@ export class WeightManager {
                         const fVal = parseInt(fKey, 10);
 
                         if (pVal && !isNaN(fVal) && fVal > 0 && !isNaN(areaVal)) {
-                            // Calculation: (Area / P) / F
-                            // Example: Area=100000, P=13893 (for 5), F=1 => 7.19 => 7
-                            // User requested Math.round() instead of Math.floor()
-                            const result = Math.round((areaVal / pVal) / fVal);
+                            // Calculation: (P / Area) / F
+                            // Example: P=13893 (for 5), Area=100000, F=1 => 0.13 => 0
+                            const rawResult = (pVal / areaVal) / fVal;
+                            const result = Math.round(rawResult);
+
                             replaced = true;
                             // Return integer as string
                             return result.toString();
