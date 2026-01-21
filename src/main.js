@@ -123,6 +123,8 @@ class DXFViewerApp {
                 if (e.target.files.length > 0) {
                     this.loadDXFFile(e.target.files[0]);
                 }
+                // Reset input so same file can be selected again
+                e.target.value = '';
             });
         }
 
@@ -595,6 +597,66 @@ class DXFViewerApp {
     async loadDXFFile(file) {
         if (!file) return;
 
+        const extension = file.name.split('.').pop().toLowerCase();
+
+        if (extension === 'dwg') {
+            await this.handleDwgConversion(file);
+        } else {
+            await this.processDxfFile(file);
+        }
+    }
+
+    async handleDwgConversion(file) {
+        // 1. Check file size (max 20MB)
+        const maxSize = 20 * 1024 * 1024; // 20 MB
+        if (file.size > maxSize) {
+            alert(this.languageManager.translate('fileTooLarge') || 'File is too large. Max 20MB allowed.');
+            return;
+        }
+
+        // 2. Show Loader
+        const loader = document.getElementById('conversion-loader');
+        if (loader) loader.classList.remove('hidden');
+
+        this.updateStatus(this.languageManager.translate('converting') || 'Converting DWG...');
+
+        try {
+            // 3. Prepare FormData
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // 4. Send POST request
+            const response = await fetch('https://api.izgi.me/convert', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error(`Conversion API failed: ${response.status}`);
+            }
+
+            // 5. Get Blob
+            const blob = await response.blob();
+
+            // 6. Convert to File object
+            const convertedFile = new File([blob], file.name.replace(/\.dwg$/i, '.dxf'), {
+                type: 'application/dxf'
+            });
+
+            // 7. Load converted DXF
+            await this.processDxfFile(convertedFile);
+
+        } catch (error) {
+            console.error('DWG Conversion Error:', error);
+            alert(this.languageManager.translate('conversionFailed') || 'Dönüştürme başarısız oldu');
+            this.updateStatus('Conversion Failed');
+        } finally {
+            // 8. Hide Loader
+            if (loader) loader.classList.add('hidden');
+        }
+    }
+
+    async processDxfFile(file) {
         this.updateStatus('Parsing DXF...');
         try {
             const dxf = await this.loader.load(file);
@@ -609,6 +671,10 @@ class DXFViewerApp {
                 this.updateStatus('Loaded ' + file.name);
                 this.updateEntityTree(group.children);
                 this.updateLayersPanel(this.viewer.dxfGroup);
+
+                // Show filename in UI
+                const fileNameEl = document.getElementById('file-name');
+                if (fileNameEl) fileNameEl.innerText = file.name;
             }
 
             this.viewer.zoomExtents();

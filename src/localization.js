@@ -147,7 +147,7 @@ export const translations = {
     en: {
         // Header / File
         "appTitle": "DXF Viewer",
-        "openFile": "Open DXF File",
+        "openFile": "Open File",
         "noFileSelected": "No file selected",
         "loadingDXF": "Loading DXF file...",
         "errorLoading": "Error loading DXF: ",
