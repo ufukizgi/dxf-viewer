@@ -2,10 +2,11 @@
 import * as THREE from 'three';
 
 export class MeasurementManager {
-    constructor(viewer, snappingManager) {
+    constructor(viewer, snappingManager, onStatusUpdate) {
         this.viewer = viewer;
         this.scene = viewer.scene;
         this.snappingManager = snappingManager;
+        this.onStatusUpdate = onStatusUpdate || (() => { });
 
         this.activeTool = null; // 'distance', 'angle', 'area', etc.
         this.points = [];
@@ -27,6 +28,15 @@ export class MeasurementManager {
         this.clearTemp();
         this.activeScale = 1.0; // Reset scale
         console.log(`Measurement Tool Activated: ${tool}`);
+
+        // Initial status message
+        if (tool === 'radius' || tool === 'diameter') {
+            this.onStatusUpdate(`Selected ${tool}. Step 1: Click on an Arc or Circle.`);
+        } else if (tool === 'distance') {
+            this.onStatusUpdate(`Selected Distance. Step 1: Click start point.`);
+        } else if (tool === 'angle') {
+            this.onStatusUpdate(`Selected Angle. Step 1: Click center point.`);
+        }
     }
 
     deactivateTool() {
@@ -34,16 +44,20 @@ export class MeasurementManager {
         this.points = [];
         this.clearTemp();
         this.activeScale = 1.0;
+        this.onStatusUpdate('Ready');
 
-        // Remove active state from measurement buttons
-        const distanceBtn = document.querySelector('[data-i18n-title="measureDistance"]');
-        const angleBtn = document.querySelector('[data-i18n-title="measureAngle"]');
-
-        [distanceBtn, angleBtn].forEach(btn => {
-            if (btn) {
-                btn.classList.remove('active', 'bg-blue-600');
-            }
-        });
+        // Reset UI via main app callback if available, or try to access it
+        if (this.viewer && this.viewer.app && this.viewer.app.updateMeasureUI) {
+            this.viewer.app.updateMeasureUI(null);
+        } else {
+            // Fallback if accessed differently (e.g. if viewer.app isn't set, might need to pass callback)
+            // But usually accessible via window or passed context. 
+            // In this codebase, MeasurementManager is instantiated by App or Main. 
+            // Let's assume Main.js has a reference or we can dispatch an event.
+            // Actually, I can just do what I did on line 40 but targeting the new button.
+            const mainBtn = document.getElementById('measure-menu-btn');
+            if (mainBtn) mainBtn.classList.remove('active', 'bg-blue-600');
+        }
     }
 
     cancel() {
@@ -51,16 +65,207 @@ export class MeasurementManager {
         this.points = [];
         this.clearTemp();
         this.activeScale = 1.0;
+        if (this.activeTool) {
+            // Re-prompt for first step
+            this.activateTool(this.activeTool);
+        } else {
+            this.onStatusUpdate('Ready');
+        }
     }
 
     handleMouseMove(pointerNDC, rayOrigin, rayDir) {
         // Handled by updatePreview called explicitly from main
     }
 
-    // Called from Main.js
+    handleClick(point, hitObject) {
+        if (!this.activeTool) return;
+
+        // Radius & Diameter Tools (New 3-Step)
+        if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
+            if (this.points.length === 0) {
+                if (hitObject && hitObject.userData) {
+                    const type = hitObject.userData.type;
+                    if (type === 'CIRCLE' || type === 'ARC') {
+                        const entity = hitObject.userData.entity || hitObject.userData;
+                        const center = new THREE.Vector3(entity.center.x, entity.center.y, 0);
+                        this.currentRadiusEntity = {
+                            center: center,
+                            radius: entity.radius,
+                            type: type
+                        };
+                        this.points.push(center); // P0
+                        console.log(`[Measurement] Selected ${type}. Click to place Arrow.`);
+                        this.onStatusUpdate(`Step 2: Move mouse to position Arrow, then Click.`);
+                    }
+                }
+            }
+            else if (this.points.length === 1) {
+                const center = this.currentRadiusEntity.center;
+                const radius = this.currentRadiusEntity.radius;
+                const v = new THREE.Vector3().subVectors(point, center).normalize();
+                if (v.lengthSq() === 0) v.set(1, 0, 0);
+                const arrowPoint = center.clone().add(v.multiplyScalar(radius));
+                this.points.push(arrowPoint); // P1
+                this.onStatusUpdate(`Step 3: Move mouse to position Text, then Click to finish.`);
+            }
+            else if (this.points.length === 2) {
+                const textPoint = point; // P2
+                this.points.push(textPoint);
+
+                const center = this.currentRadiusEntity.center;
+                const radius = this.currentRadiusEntity.radius;
+                const arrowPoint = this.points[1];
+
+                const visual = this.createSmartRadiusVisual(center, radius, arrowPoint, textPoint, this.activeTool, this.activeScale);
+                this.group.add(visual);
+
+                const scale = this.activeScale || 1;
+                const val = (this.activeTool === 'radius') ? radius : radius * 2;
+                const valScaled = val / scale;
+                this.measurements.push({
+                    type: this.activeTool,
+                    value: valScaled.toFixed(3),
+                    visual: visual
+                });
+
+                this.points = [];
+                this.currentRadiusEntity = null;
+                this.clearTemp();
+                console.log(`[Measurement] Finished ${this.activeTool}.`);
+                this.onStatusUpdate(`Finished ${this.activeTool}. Ready for next.`);
+                // Reset to step 1 automatically? Or stay active.
+                // activateTool resets points.
+                // We keep tool active.
+                this.activeTool = this.activeTool; // no-op but consistent
+                this.onStatusUpdate(`Selected ${this.activeTool}. Step 1: Click on an Arc or Circle.`);
+            }
+            return;
+        }
+
+        if (this.activeTool === 'distance') {
+            if (this.points.length === 0) {
+                this.points.push(point);
+                this.activeScale = 1.0;
+                let targetObj = hitObject;
+                if (!targetObj && this.snappingManager && this.snappingManager.activeSnap) {
+                    targetObj = this.snappingManager.activeSnap.object;
+                }
+                if (targetObj) {
+                    if (targetObj.userData.placementScale) this.activeScale = targetObj.userData.placementScale;
+                    else if (targetObj.userData.templateScale) this.activeScale = targetObj.userData.templateScale;
+                    else if (targetObj.parent && targetObj.parent.userData.placementScale) this.activeScale = targetObj.parent.userData.placementScale;
+                }
+            } else if (this.points.length === 1) {
+                if (this.points[0].distanceTo(point) < 0.001) return;
+                this.points.push(point);
+            } else if (this.points.length === 2) {
+                const p1 = this.points[0];
+                const p2 = this.points[1];
+                const placement = point;
+                const state = this.getDimensionState(p1, p2, placement, this.activeScale);
+                const visual = this.createDimensionVisual(state, false);
+                this.group.add(visual);
+                this.measurements.push({ type: 'distance', p1, p2, placement, value: state.value, visual, stateType: state.type, scale: this.activeScale });
+                this.points = [];
+                this.clearTemp();
+                this.activeScale = 1.0;
+            }
+        }
+
+        if (this.activeTool === 'angle') {
+            const p = point.clone();
+            const validTypes = ['LINE', 'LWPOLYLINE', 'POLYLINE'];
+            if (!this.lineSelection && this.points.length === 0 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
+                this.lineSelection = [hitObject];
+                return;
+            }
+            if (this.lineSelection && this.lineSelection.length === 1 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
+                this.lineSelection.push(hitObject);
+                const l1 = this.lineSelection[0], l2 = this.lineSelection[1];
+                const getLinePts = (line) => {
+                    const pos = line.geometry.attributes.position;
+                    // Fix: Handle BufferGeometry safely
+                    const getVec = (idx) => new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+                    return [getVec(0), getVec(1)];
+                };
+                const [l1s, l1e] = getLinePts(l1);
+                const [l2s, l2e] = getLinePts(l2);
+                const x1 = l1s.x, y1 = l1s.y, x2 = l1e.x, y2 = l1e.y;
+                const x3 = l2s.x, y3 = l2s.y, x4 = l2e.x, y4 = l2e.y;
+                const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+                if (Math.abs(denom) > 1e-9) {
+                    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+                    const intersection = new THREE.Vector3(x1 + ua * (x2 - x1), y1 + ua * (y2 - y1), 0);
+                    this.points.push(intersection);
+                    this.points.push(l1e);
+                    this.points.push(l2e);
+                }
+                this.lineSelection = null;
+                return;
+            }
+            if (this.points.length === 0) this.points.push(p);
+            else if (this.points.length === 1) this.points.push(p);
+            else if (this.points.length === 2) this.points.push(p);
+            else if (this.points.length === 3) {
+                const center = this.points[0], start = this.points[1], end = this.points[2], placement = p;
+                const visual = this.createAngleVisual(center, start, end, placement, false);
+                this.group.add(visual);
+                const v1 = new THREE.Vector3().subVectors(start, center);
+                const v2 = new THREE.Vector3().subVectors(end, center);
+                let diff = Math.atan2(v2.y, v2.x) - Math.atan2(v1.y, v1.x);
+                if (diff < 0) diff += Math.PI * 2;
+                this.measurements.push({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+                this.points = [];
+                this.clearTemp();
+            }
+        }
+    }
+
     updatePreview(point) {
         if (!this.activeTool) return;
         this.clearTemp();
+
+        // Radius/Diameter Preview
+        if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
+            if (this.points.length === 1) {
+                // Preview Arrow Phase
+                // Have Center, Dragging Arrow on Circle
+                const center = this.currentRadiusEntity.center;
+                const radius = this.currentRadiusEntity.radius;
+
+                // Calc Arrow Pos
+                const v = new THREE.Vector3().subVectors(point, center).normalize();
+                if (v.lengthSq() === 0) v.set(1, 0, 0);
+                const arrowPoint = center.clone().add(v.multiplyScalar(radius));
+
+                // Determine Direction (Inside/Outside)
+                const dist = point.distanceTo(center);
+                const isOutside = dist > radius;
+
+                // If Outside: Arrow points to Center.
+                // If Inside: Arrow points Outwards.
+
+                // Visual just for Arrow Phase
+                // Show Circle Ghost? Maybe.
+                // Show Arrow.
+
+                this.tempMeasurement = this.createSmartRadiusPreview_Arrow(center, arrowPoint, isOutside);
+                this.group.add(this.tempMeasurement);
+
+            } else if (this.points.length === 2) {
+                // Preview Text Phase
+                // Have Center, ArrowPoint. Dragging Text.
+                const center = this.currentRadiusEntity.center;
+                const radius = this.currentRadiusEntity.radius;
+                const arrowPoint = this.points[1];
+                const textPoint = point;
+
+                const visual = this.createSmartRadiusVisual(center, radius, arrowPoint, textPoint, this.activeTool, this.activeScale, true);
+                this.tempMeasurement = visual;
+                this.group.add(this.tempMeasurement);
+            }
+            return;
+        }
 
         // Distance Tool
         if (this.activeTool === 'distance') {
@@ -335,7 +540,7 @@ export class MeasurementManager {
         return group;
     }
 
-    handleClick(point, hitObject) {
+    handleClick_deprecated(point, hitObject) {
         if (!this.activeTool) return;
 
         if (this.activeTool === 'distance') {
@@ -505,9 +710,119 @@ export class MeasurementManager {
                 this.clearTemp();
             }
         }
+
+        // Radius & Diameter Tools
+        if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
+            if (hitObject && hitObject.userData) {
+                const type = hitObject.userData.type;
+                if (type === 'CIRCLE' || type === 'ARC') {
+                    const entity = hitObject.userData.entity || hitObject.userData; // Robust check
+                    const center = new THREE.Vector3(entity.center.x, entity.center.y, 0);
+                    const radius = entity.radius;
+
+                    if (this.activeTool === 'radius') {
+                        const visual = this.createRadiusVisual(center, radius, point, this.activeScale);
+                        this.group.add(visual);
+                        this.measurements.push({
+                            type: 'radius',
+                            value: (radius / this.activeScale).toFixed(3),
+                            visual
+                        });
+                        console.log(`Radius Measured: ${radius}`);
+                    } else {
+                        const visual = this.createDiameterVisual(center, radius, point, this.activeScale);
+                        this.group.add(visual);
+                        this.measurements.push({
+                            type: 'diameter',
+                            value: (radius * 2 / this.activeScale).toFixed(3),
+                            visual
+                        });
+                    }
+                    // Reset
+                    this.points = [];
+                    this.clearTemp();
+                } else {
+                    console.log("Not a Circle/Arc");
+                }
+            }
+        }
     }
 
-    // Smart Logic: Detect Horizontal / Vertical / Aligned
+    createRadiusVisual(center, radius, clickPoint, scale) {
+        const group = new THREE.Group();
+        const rVal = radius / scale;
+        const text = "R" + rVal.toFixed(2);
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+
+        // Line from Center to Click Point (projected onto max radius if needed, but click on arc implies distance is r)
+        // Actually clickPoint might be slightly off due to picking.
+        // Vector Center -> Click
+        const v = new THREE.Vector3().subVectors(clickPoint, center).normalize();
+        const pEdge = center.clone().add(v.clone().multiplyScalar(radius));
+
+        // Draw line Center -> Edge
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, pEdge]), this.lineMaterial));
+
+        // Arrow at Edge (pointing out)
+        // Standard Radius: Arrow touches arc from inside.
+        // center ---->| Arc
+        group.add(this.createArrow(pEdge, v, 3.0, this.lineMaterial.color));
+
+        // Text at mid
+        const mid = new THREE.Vector3().addVectors(center, pEdge).multiplyScalar(0.5);
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        textMesh.position.copy(mid);
+        group.add(textMesh);
+
+        return group;
+    }
+
+    createDiameterVisual(center, radius, clickPoint, scale) {
+        const group = new THREE.Group();
+        const dVal = radius * 2 / scale;
+        const text = "Ø" + dVal.toFixed(2);
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+
+        // Vector Center -> Click
+        const v = new THREE.Vector3().subVectors(clickPoint, center).normalize();
+
+        // Full Diameter Line: Center +/- Radius*V
+        const p1 = center.clone().add(v.clone().multiplyScalar(radius));
+        const p2 = center.clone().sub(v.clone().multiplyScalar(radius));
+
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), this.lineMaterial));
+
+        // Arrows at both ends pointing OUT
+        group.add(this.createArrow(p1, v, 3.0, this.lineMaterial.color));
+        group.add(this.createArrow(p2, v.clone().negate(), 3.0, this.lineMaterial.color)); // Pointing Opposite
+
+        // Text at Center
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        textMesh.position.copy(center);
+        // Offset text slightly to not overlap line?
+        textMesh.position.y += 2.0;
+        group.add(textMesh);
+
+        return group;
+    }
+
+    showAreaMeasurement(point, value) {
+        const group = new THREE.Group();
+        const text = "S: " + value.toFixed(2);
+        group.userData = { type: 'DIMENSION', value: text, isPreview: false };
+
+        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color);
+        textMesh.position.copy(point);
+        group.add(textMesh);
+        this.group.add(group);
+
+        this.measurements.push({
+            type: 'area',
+            value: value.toFixed(2),
+            visual: group
+        });
+    }
+
     getDimensionState(p1, p2, mouse, scale = 1.0) {
         const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
         const dir = new THREE.Vector3().subVectors(p2, p1);
@@ -929,6 +1244,109 @@ export class MeasurementManager {
             if (obj.material) obj.material.dispose();
             if (obj.map) obj.map.dispose();
         });
+    }
+    createSmartRadiusPreview_Arrow(center, arrowPoint, isOutside) {
+        const group = new THREE.Group();
+        group.userData = { type: 'DIMENSION', value: "", isPreview: true };
+
+        // Vector Center -> ArrowPoint
+        const v = new THREE.Vector3().subVectors(arrowPoint, center).normalize();
+
+        // Arrow Logic based on Outside/Inside
+        // Outside: Points In (to Center) -> Dir = -v
+        // Inside: Points Out (to Edge) -> Dir = v
+        const dir = isOutside ? v.clone().negate() : v;
+        const color = 0x32a852; // Green
+
+        const arrowLen = 3.0; // Scalable? this.activeScale?
+        // Let's rely on fixed size for preview or approximate
+        const arrow = this.createArrow(arrowPoint, dir, arrowLen, color);
+        group.add(arrow);
+
+        // Optional: Guideline from Center to Arrow?
+        // group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, arrowPoint]), this.previewMaterial));
+
+        return group;
+    }
+
+    createSmartRadiusVisual(center, radius, arrowPoint, textPoint, type, scale, isPreview) {
+        const group = new THREE.Group();
+        scale = scale || 1.0;
+
+        // Value
+        const val = (type === 'radius') ? radius : radius * 2;
+        const valScaled = val / scale;
+        const prefix = (type === 'radius') ? 'R' : 'Ø';
+        const textStr = prefix + valScaled.toFixed(2);
+
+        group.userData = { type: 'DIMENSION', value: textStr, isPreview: isPreview };
+        const material = isPreview ? this.previewMaterial : this.lineMaterial;
+        const color = material.color;
+
+        // 1. Determine Direction (Inside/Outside) based on Text Position
+        const distText = textPoint.distanceTo(center);
+        const isOutside = distText > (radius * 0.95);
+
+        const vRadius = new THREE.Vector3().subVectors(arrowPoint, center).normalize();
+
+        // Arrow Direction: 
+        // Outside Dimension: Arrow points IN to Center. (Dir = -vRadius)
+        // Inside Dimension: Arrow points OUT from Center (Normal Radius). (Dir = vRadius)
+        const arrowDir = isOutside ? vRadius.clone().negate() : vRadius;
+
+        const arrowLen = 3.0; // Fixed size
+
+        // 2. Add Arrow
+        // Tip is at arrowPoint.
+        group.add(this.createArrow(arrowPoint, arrowDir, arrowLen, color));
+
+        // 3. Leader Line Calculation
+        // Start from Arrow Tail.
+        // As analyzed: createArrow uses a shape extending backwards (-X) from origin.
+        // When rotated to align +X with arrowDir: Tip is at arrowPoint, Shape extends in -arrowDir.
+        // So the "Back" of the arrow (Tail) is physically at: arrowPoint - arrowDir * arrowLen.
+        const tailPos = arrowPoint.clone().sub(arrowDir.clone().multiplyScalar(arrowLen));
+
+        // Landing Line (Shoulder)
+        // Horizontal line under text.
+        // Length: let's use a fixed reasonable size relative to text or just fixed 6.0
+        const estimatedWidth = textStr.length * 1.8;
+        const landingLen = Math.max(6.0, estimatedWidth + 2.0);
+        // Check if text is to the Right or Left of Arrow Tail
+        const isTextRight = textPoint.x > tailPos.x;
+
+        // Landing Vertical Position: slightly below textPoint (baseline)
+        const textHeight = 5.0; // approx world scale height
+        const landingY = textPoint.y - textHeight * 0.3;
+
+        // Landing Line Start/End
+        const landL = new THREE.Vector3(textPoint.x - landingLen / 2, landingY, 0);
+        const landR = new THREE.Vector3(textPoint.x + landingLen / 2, landingY, 0);
+
+        // Draw Landing Line
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([landL, landR]), material));
+
+        // Connect Leader to the closest end of the Landing Line
+        // If Text is Right of Arrow -> Connect to Left end of Landing.
+        // If Text is Left of Arrow -> Connect to Right end of Landing.
+        // This prevents the leader crossing through the text.
+        const connectionPoint = isTextRight ? landL : landR;
+
+        // Draw Leader Line: Tail -> Connection
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([tailPos, connectionPoint]), material));
+
+        // 4. Center Mark line (Optional but good for Radius)
+        // Line from Center to ArrowPoint removed per user request.
+        // group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, arrowPoint]), material));
+
+        // 5. Text Label
+        // Place at textPoint (centered).
+        const textMesh = this.createTextMesh(textStr, 0, color);
+        textMesh.position.copy(textPoint);
+        textMesh.position.z = 0.05;
+        group.add(textMesh);
+
+        return group;
     }
 }
 

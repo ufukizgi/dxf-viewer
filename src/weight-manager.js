@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MATERIALS, DEFAULT_MATERIAL_ID } from './materials.js';
+import { MATERIALS, TEMPERS, DEFAULT_MATERIAL_ID } from './materials.js';
 
 export class WeightManager {
     constructor(viewer, languageManager, snappingManager, onCloseCallback, onChainSelectCallback) {
@@ -10,6 +10,9 @@ export class WeightManager {
         this.onChainSelectCallback = onChainSelectCallback;
 
         this.currentMaterialId = DEFAULT_MATERIAL_ID;
+        // Default temper
+        this.currentTemperId = TEMPERS.length > 0 ? TEMPERS[0].id : '';
+
         this.selectedObjects = [];
         this.calculationResult = null;
         this.isEnabled = false;
@@ -38,6 +41,9 @@ export class WeightManager {
 
         // Calculated values storage for placeholders
         this.calculatedValues = {};
+
+        // Active state for trigger (Manual mode)
+        this.isActive = false;
     }
 
     init() {
@@ -59,6 +65,34 @@ export class WeightManager {
 
         // Print button
         this.printBtn = document.getElementById('print-btn');
+
+        // Populate Material Selector
+        const matSelector = document.getElementById('material-selector');
+        if (matSelector) {
+            matSelector.innerHTML = '';
+            MATERIALS.forEach(mat => {
+                const opt = document.createElement('option');
+                opt.value = mat.id;
+                opt.textContent = `${mat.name}`;
+                matSelector.appendChild(opt);
+            });
+            // Set default
+            matSelector.value = this.currentMaterialId;
+        }
+
+        // Populate Temper Selector
+        const temperSelector = document.getElementById('temper-selector');
+        if (temperSelector) {
+            temperSelector.innerHTML = '';
+            TEMPERS.forEach(temp => {
+                const opt = document.createElement('option');
+                opt.value = temp.id;
+                opt.textContent = temp.name;
+                temperSelector.appendChild(opt);
+            });
+            // Set default if exists
+            this.currentTemperId = temperSelector.value;
+        }
     }
 
     bindEvents() {
@@ -77,6 +111,15 @@ export class WeightManager {
             selector.addEventListener('change', (e) => {
                 this.currentMaterialId = e.target.value;
                 this.calculateAndRender();
+            });
+        }
+
+        const temperSelector = document.getElementById('temper-selector');
+        if (temperSelector) {
+            temperSelector.addEventListener('change', (e) => {
+                this.currentTemperId = e.target.value;
+                // Temper currently doesn't affect weight calc, but future proofing
+                console.log(`Temper changed to: ${this.currentTemperId}`);
             });
         }
 
@@ -105,28 +148,57 @@ export class WeightManager {
                 this.exitTemplatePlacementMode(true);
             }
         });
+    }
 
+    toggleActive() {
+        this.isActive = !this.isActive;
+        console.log(`[WeightManager] Active State: ${this.isActive}`);
+
+        // Update button visual state
+        if (this.btn) {
+            if (this.isActive) {
+                this.btn.classList.add('bg-cyan-500/20', 'text-cyan-400');
+            } else {
+                this.btn.classList.remove('bg-cyan-500/20', 'text-cyan-400');
+            }
+        }
+
+        // If turned ON, attempt to calculate with current selection
+        if (this.isActive && this.selectedObjects.length > 0) {
+            this.update(this.selectedObjects);
+        } else if (!this.isActive) {
+            // If turned OFF, hide panel
+            this.panel.classList.add('hidden');
+            this.clearVisualization();
+        }
     }
 
     update(selectedObjects) {
         this.selectedObjects = selectedObjects || [];
 
-        const closedGeoms = this.filterClosedGeometries(this.selectedObjects);
-        // Enable button if there is ANY selection (to allow Chain Select)
+        // Always update button enabled state based on selection presence
+        // Enable button if there is ANY selection (to allow Chain Select or Manual Trigger)
         this.isEnabled = this.selectedObjects.length > 0;
 
-        // Update button state
         if (this.btn) {
             if (this.isEnabled) {
-                this.btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                this.btn.classList.remove('opacity-50', 'cursor-not-allowed', 'group-is-disabled');
                 this.btn.classList.add('hover:bg-white/10');
             } else {
-                this.btn.classList.add('opacity-50', 'cursor-not-allowed');
+                this.btn.classList.add('opacity-50', 'cursor-not-allowed', 'group-is-disabled');
                 this.btn.classList.remove('hover:bg-white/10');
             }
         }
 
-        // Show/hide weight panel based on whether closed geometries are selected
+        // --- TRIGGER LOGIC ---
+        // If NOT active, do not proceed to calculation/panel show.
+        if (!this.isActive) {
+            return;
+        }
+
+        const closedGeoms = this.filterClosedGeometries(this.selectedObjects);
+
+        // Show/hide weight panel based on whether closed geometries are selected AND active
         if (this.panel) {
             if (closedGeoms.length > 0) {
                 this.panel.classList.remove('hidden');
@@ -139,20 +211,17 @@ export class WeightManager {
     }
 
     togglePanel() {
-        if (!this.panel || !this.isEnabled) return;
-
-        const isHidden = this.panel.classList.contains('hidden');
-        if (isHidden) {
-            this.panel.classList.remove('hidden');
-            this.calculateAndRender();
-            this.visualize();
-        } else {
-            this.close();
-        }
+        // Deprecated or redirect to toggleActive? 
+        // With new logic, togglePanel might just be toggleActive
+        this.toggleActive();
     }
 
     close() {
+        this.isActive = false; // Deactivate on close
         if (this.panel) this.panel.classList.add('hidden');
+        if (this.btn) {
+            this.btn.classList.remove('bg-cyan-500/20', 'text-cyan-400');
+        }
         this.clearVisualization();
         if (this.onCloseCallback) {
             this.onCloseCallback();

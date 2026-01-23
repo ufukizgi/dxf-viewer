@@ -48,36 +48,111 @@
 
             <div class="header-center">
                 <div class="header-tools">
-                    <button class="icon-btn tool-btn" data-tool="distance" title="Measure Distance"
-                        data-i18n-title="measureDistance">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M1 3 V21" stroke-width="2" />
-                            <path d="M23 3 V21" stroke-width="2" />
-                            <!-- Left arrow -->
-                            <path d="M8 8 L3 12 L8 16" stroke-width="2" />
-                            <!-- Right arrow -->
-                            <path d="M16 8 L21 12 L16 16" stroke-width="2" />
-                            <!-- Horizontal line -->
-                            <path d="M3 12 H21" stroke-width="2" />
-                        </svg>
-                    </button>
-                    <button class="icon-btn tool-btn" data-tool="angle" title="Measure Angle"
-                        data-i18n-title="measureAngle">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M18 3 L3 22 L22 22" stroke-width="2" />
-                            <path d="M9 14 A5 5 30 0 1 12 22" stroke-width="2" fill="none" />
-                        </svg>
-                    </button>
+                    <!-- Measure Dropdown -->
+                    <div class="relative group" id="measure-dropdown-container">
+                        <button class="icon-btn tool-btn" id="measure-menu-btn" title="Measurement Tools"
+                            data-i18n-title="measureTools">
+                            <!-- Custom SVG provided by user -->
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M1 3 V21"></path>
+                                <path d="M23 3 V21"></path>
+                                <path d="M8 8 L3 12 L8 16"></path>
+                                <path d="M16 8 L21 12 L16 16"></path>
+                                <path d="M3 12 H21"></path>
+                            </svg>
+                        </button>
 
-                    <!-- Weight Calculation Button -->
-                    <button class="icon-btn tool-btn opacity-50 cursor-not-allowed transition-opacity duration-200"
-                        id="weight-btn" title="Calculate Weight" data-i18n-title="weightBtn">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M20.9 19.1L4.1 19c-1 0-1.7.9-1.5 1.9L2.9 22H21l.4-1.1c.1-1-.6-1.8-1.5-1.8z" />
-                            <path d="M16 11l-4-7-4 7" />
-                            <path d="M12 4v15" />
-                        </svg>
-                    </button>
+                        <!-- Dropdown Menu -->
+                        <div class="hidden absolute top-full left-0 mt-2 p-1.5 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[200px] flex flex-col gap-1 z-50"
+                            id="measure-dropdown-menu">
+
+                            <!-- Linear -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                data-tool="distance">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M1 3 V21" />
+                                    <path d="M23 3 V21" />
+                                    <path d="M8 8 L3 12 L8 16" />
+                                    <path d="M16 8 L21 12 L16 16" />
+                                    <path d="M3 12 H21" />
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="measureDistance">Linear</span>
+                            </button>
+
+                            <!-- Angle -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                data-tool="angle">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <path d="M18 3 L3 22 L22 22" />
+                                    <path d="M9 14 A5 5 30 0 1 12 22" fill="none" />
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="measureAngle">Angle</span>
+                            </button>
+
+                            <!-- Radius -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                data-tool="radius">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="12" y1="12" x2="22" y2="12" />
+                                    <text x="14" y="10" font-size="8" fill="white" stroke="none">R</text>
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="measureRadius">Radius</span>
+                            </button>
+
+                            <!-- Diameter -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                data-tool="diameter">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <line x1="2" y1="12" x2="22" y2="12" />
+                                    <path d="M4 10 L2 12 L4 14" />
+                                    <path d="M20 10 L22 12 L20 14" />
+                                    <text x="11" y="10" font-size="8" fill="white" stroke="none">Ø</text>
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="measureDiameter">Diameter</span>
+                            </button>
+
+                            <!-- Visible Surface -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
+                                data-tool="area">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="2" y="2" width="20" height="20" />
+                                    <path d="M2 2 L22 22" />
+                                    <path d="M22 2 L2 22" />
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="measureArea">Visible
+                                    Surface</span>
+                            </button>
+
+                            <hr class="border-white/10 my-1">
+
+                            <!-- Weight Calculation (Moved to Dropdown) -->
+                            <button
+                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left opacity-50 cursor-not-allowed group-is-disabled"
+                                id="weight-btn" title="Calculate Weight" data-i18n-title="weightBtn">
+                                <!-- User provided SVG, adapted fill to currentColor for dark mode -->
+                                <svg width="18" height="18" viewBox="0 0 76 76" xmlns="http://www.w3.org/2000/svg"
+                                    version="1.1" fill="currentColor">
+                                    <path stroke-width="0.2" stroke-linejoin="round"
+                                        d="M 38.7916,15.8334C 40.5405,15.8334 40.375,17.2511 40.375,19L 40.4805,22.1667L 58.5833,22.1667L 58.5833,25.3333L 56.5258,25.3333L 64.9167,45.125C 64.9167,48.1856 59.8717,50.6667 54.625,50.6667C 49.3783,50.6667 44.3333,48.1856 44.3333,45.125L 52.7242,25.3333L 40.5861,25.3333L 41.5394,53.9324C 47.6545,54.3801 52.25,56.2923 52.25,58.5833L 25.3333,58.5833C 25.3333,56.2923 29.9288,54.3801 36.0439,53.9324L 36.9972,25.3333L 23.2758,25.3334L 31.6667,45.125C 31.6667,48.1856 26.6217,50.6667 21.375,50.6667C 16.1283,50.6667 11.0833,48.1856 11.0833,45.125L 19.4742,25.3334L 17.4167,25.3333L 17.4167,22.1667L 37.1027,22.1667L 37.2083,19C 37.2083,17.2511 37.0427,15.8334 38.7916,15.8334 Z M 61.2191,45.125L 55.4167,30.7634L 55.4167,45.125L 61.2191,45.125 Z M 48.0308,45.125L 53.8333,45.125L 53.8333,30.7634L 48.0308,45.125 Z M 27.9691,45.125L 22.1667,30.7634L 22.1667,45.125L 27.9691,45.125 Z M 14.7808,45.125L 20.5833,45.125L 20.5833,30.7634L 14.7808,45.125 Z " />
+                                </svg>
+                                <span class="text-sm font-medium text-white" data-i18n="weightBtn">Weight Calc.</span>
+                            </button>
+
+                        </div>
+                    </div>
 
                     <!-- Print Button -->
                     <button class="icon-btn tool-btn" id="print-btn" title="Print" data-i18n-title="print">
@@ -196,22 +271,48 @@
                         </svg>
                         <h3 data-i18n="weightTitle">Weight Calculation</h3>
                     </div>
-                    <div class="panel-content flex-1 overflow-y-auto p-3 space-y-4">
+                    <div class="panel-content flex-1 overflow-y-auto p-2 space-y-2">
                         <!-- Material Selector -->
-                        <div>
-                            <label class="block text-xs text-gray-400 mb-1" data-i18n="material">Material</label>
-                            <select id="material-selector"
-                                class="w-full bg-black/20 border border-white/10 rounded px-2 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors cursor-pointer">
-                                <option value="aluminum">Aluminium (2.7)</option>
-                                <option value="steel">Steel (7.85)</option>
-                                <option value="stainless">Stainless Steel (8.0)</option>
-                                <option value="copper">Copper (8.96)</option>
-                                <option value="brass">Brass (8.73)</option>
-                                <option value="plastic">Plastic (1.04)</option>
-                            </select>
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium whitespace-nowrap mr-2"
+                                data-i18n="material">Material</span>
+                            <div class="relative flex-1 max-w-[65%]">
+                                <select id="material-selector"
+                                    class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-right text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer appearance-none pr-6 font-mono">
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                                <div
+                                    class="absolute inset-y-0 right-0 flex items-center px-1 pointer-events-none text-gray-400">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </div>
+                            </div>
                         </div>
 
-                        <hr class="border-white/10">
+                        <!-- Temper Selector -->
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-1 flex justify-between items-center mt-2 border border-white/5">
+                            <span class="text-gray-200 font-medium whitespace-nowrap mr-2"
+                                data-i18n="temper">Temper</span>
+                            <div class="relative flex-1 max-w-[65%]">
+                                <select id="temper-selector"
+                                    class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-right text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 transition-colors cursor-pointer appearance-none pr-6 font-mono">
+                                    <!-- Options will be populated by JS -->
+                                </select>
+                                <div
+                                    class="absolute inset-y-0 right-0 flex items-center px-1 pointer-events-none text-gray-400">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="border-white/10 mt-3">
 
                         <!-- Mandrel -->
                         <div

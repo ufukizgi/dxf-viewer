@@ -1,10 +1,21 @@
 export const MATERIALS = [
-    { id: 'aluminum', name: "Aluminium", density: 2.7 },
-    { id: 'steel', name: "Steel", density: 7.85 },
-    { id: 'stainless', name: "Stainless Steel", density: 8.0 },
-    { id: 'copper', name: "Copper", density: 8.96 },
-    { id: 'brass', name: "Brass", density: 8.73 },
-    { id: 'plastic', name: "Plastic (ABS)", density: 1.04 }
+    { id: '6060', name: "6060", density: 2.7 },
+    { id: '6063', name: "6063", density: 2.7 },
+    { id: '6082', name: "6082", density: 2.7 },
+    { id: '6061', name: "6061", density: 2.7 },
+    { id: '6013', name: "6013", density: 2.7 },
+    { id: '6463', name: "6463", density: 2.7 },
+    { id: '1050', name: "1050", density: 2.7 },
+    { id: '1070', name: "1070", density: 2.7 },
+    { id: '1080', name: "1080", density: 2.7 }
 ];
 
-export const DEFAULT_MATERIAL_ID = 'aluminum';
+export const TEMPERS = [
+    { id: 'T4', name: "T4" },
+    { id: 'T5', name: "T5" },
+    { id: 'T6', name: "T6" },
+    { id: 'T64', name: "T64" },
+    { id: 'T66', name: "T66" }
+];
+
+export const DEFAULT_MATERIAL_ID = '6063';

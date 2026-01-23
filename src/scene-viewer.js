@@ -334,10 +334,24 @@ export class SceneViewer {
                     obj.material = obj.material.clone();
                     obj.userData.isClonedMaterial = true;
                 }
-                obj.material.color.setHex(0xbbbbbb); // Grey
+                // Update: Hover color to Green (0x32a852)
+                obj.material.color.setHex(0x32a852);
+
+                // Update: Thicken line by 1.25x
+                if (obj.isLine) {
+                    if (obj.userData.originalLineWidth === undefined) {
+                        obj.userData.originalLineWidth = obj.material.linewidth || 1;
+                    }
+                    obj.material.linewidth = obj.userData.originalLineWidth * 1.25;
+                }
+
             } else {
                 if (obj.userData.originalColor) {
                     obj.material.color.copy(obj.userData.originalColor);
+                }
+                // Restore linewidth
+                if (obj.userData.originalLineWidth !== undefined) {
+                    obj.material.linewidth = obj.userData.originalLineWidth;
                 }
             }
         };

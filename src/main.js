@@ -37,7 +37,12 @@ class DXFViewerApp {
         this.layerStates = new Map();
 
         this.snappingManager = new SnappingManager(this.viewer);
-        this.measurementManager = new MeasurementManager(this.viewer, this.snappingManager);
+
+        this.measurementManager = new MeasurementManager(
+            this.viewer,
+            this.snappingManager,
+            (msg) => this.updateStatus(msg)
+        );
         this.objectInfoManager = new ObjectInfoManager(this.viewer);
         this.weightManager = new WeightManager(
             this.viewer,
@@ -198,32 +203,104 @@ class DXFViewerApp {
             });
         }
 
-        const distBtn = document.querySelector('[data-tool="distance"]');
-        const angleBtn = document.querySelector('[data-tool="angle"]');
+        // Measurement Dropdown
+        const measureMenuBtn = document.getElementById('measure-menu-btn');
+        const measureMenu = document.getElementById('measure-dropdown-menu');
+        const measureContainer = document.getElementById('measure-dropdown-container');
 
-        const setActiveTool = (tool) => {
-            if (distBtn) distBtn.classList.remove('active', 'bg-blue-600');
-            if (angleBtn) angleBtn.classList.remove('active', 'bg-blue-600');
+        if (measureMenuBtn && measureMenu) {
+            // Toggle Dropdown
+            measureMenuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                measureMenu.classList.toggle('hidden');
+                // measureMenuBtn.classList.toggle('bg-white/20'); // Optional visual feedback for open menu
+            });
 
-            if (tool === 'distance' && distBtn) distBtn.classList.add('active', 'bg-blue-600');
-            if (tool === 'angle' && angleBtn) angleBtn.classList.add('active', 'bg-blue-600');
+            // Close menu when Weight Calculation is clicked
+            const weightBtn = document.getElementById('weight-btn');
+            if (weightBtn) {
+                weightBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this.weightManager) {
+                        this.weightManager.toggleActive();
+                        updateMeasureUI();
+                    }
+                    measureMenu.classList.add('hidden');
+                });
+            }
+
+            // Close on outside click
+            document.addEventListener('click', (e) => {
+                if (measureContainer && !measureContainer.contains(e.target)) {
+                    measureMenu.classList.add('hidden');
+                }
+            });
+
+            // Tool Selection
+            const toolBtns = measureContainer.querySelectorAll('[data-tool]');
+            toolBtns.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const tool = btn.dataset.tool;
+
+                    // Activate Tool
+                    if (tool === 'distance' || tool === 'angle') {
+                        this.measurementManager.activateTool(tool);
+                    } else if (tool === 'radius' || tool === 'diameter' || tool === 'area') {
+                        this.measurementManager.activateTool(tool);
+                    }
+
+                    // Update UI
+                    updateMeasureUI(tool);
+
+                    // Close Menu
+                    measureMenu.classList.add('hidden');
+
+                    // Status Message
+                    let msg = '';
+                    switch (tool) {
+                        case 'distance': msg = this.languageManager.translate('instrDistance') || 'Two points'; break;
+                        case 'angle': msg = this.languageManager.translate('instrAngle') || 'Two lines'; break;
+                        case 'radius': msg = this.languageManager.translate('instrRadius') || 'Click arc/circle'; break;
+                        case 'diameter': msg = this.languageManager.translate('instrDiameter') || 'Click arc/circle for diameter'; break;
+                        case 'area': msg = this.languageManager.translate('instrArea') || 'Visible Surface'; break;
+                    }
+                    this.updateStatus(msg);
+                });
+            });
+        }
+
+        const updateMeasureUI = (activeTool) => {
+            // Highlight main button if ANY tool is active OR Weight Mode is active
+            const isWeightActive = this.weightManager && this.weightManager.isActive;
+            // activeTool is passed, OR check measurementManager.activeTool if explicit
+            const currentMeasureTool = activeTool || (this.measurementManager ? this.measurementManager.activeTool : null);
+
+            if (currentMeasureTool || isWeightActive) {
+                measureMenuBtn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-400');
+            } else {
+                measureMenuBtn.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-400');
+            }
+
+            // Optional: You could also highlight the specific item in the list
+            if (measureMenu) {
+                const toolBtns = measureMenu.querySelectorAll('[data-tool]');
+                toolBtns.forEach(btn => {
+                    if (btn.dataset.tool === currentMeasureTool) {
+                        btn.classList.add('bg-white/10');
+                    } else {
+                        btn.classList.remove('bg-white/10');
+                    }
+                });
+            }
         };
 
-        if (distBtn) {
-            distBtn.addEventListener('click', () => {
-                this.measurementManager.activateTool('distance');
-                setActiveTool('distance');
-                this.updateStatus(this.languageManager.translate('measureDistance') || 'Measure Distance: Click first point');
-            });
-        }
+        // Expose for external clearing (e.g. deactivateTool)
+        this.updateMeasureUI = updateMeasureUI;
 
-        if (angleBtn) {
-            angleBtn.addEventListener('click', () => {
-                this.measurementManager.activateTool('angle');
-                setActiveTool('angle');
-                this.updateStatus(this.languageManager.translate('measureAngle') || 'Measure Angle: Click Center Point');
-            });
-        }
+        // Ensure WeightManager knows how to update main UI on close? 
+        // Or just let Main handle it via events.
+        // For now, onKeyDown handles ESC for both.
+
 
         window.addEventListener('keydown', (e) => this.onKeyDown(e));
 
@@ -258,6 +335,12 @@ class DXFViewerApp {
 
     onKeyDown(e) {
         if (e.key === 'Escape') {
+            // 0. Close Measurement Dropdown
+            const measureMenu = document.getElementById('measure-dropdown-menu');
+            if (measureMenu && !measureMenu.classList.contains('hidden')) {
+                measureMenu.classList.add('hidden');
+            }
+
             // Priority 1: Cancel active measurement if in progress
             if (this.measurementManager && this.measurementManager.activeTool && this.measurementManager.measurementPoints && this.measurementManager.measurementPoints.length > 0) {
                 this.measurementManager.cancel();
@@ -269,6 +352,13 @@ class DXFViewerApp {
             if (this.measurementManager && this.measurementManager.activeTool) {
                 this.measurementManager.deactivateTool();
                 this.updateStatus(this.languageManager.translate('ready'));
+                return;
+            }
+
+            // Priority 2.5: Deactivate Weight Calculation Mode
+            if (this.weightManager && this.weightManager.isActive) {
+                this.weightManager.close(); // Deactivates and clears selection via callback
+                this.updateMeasureUI(); // Update Main Button Highlight
                 return;
             }
 
@@ -334,10 +424,10 @@ class DXFViewerApp {
                 const snap = this.snappingManager.findSnapPoint({ x, y });
                 if (snap) {
                     this.updateStatus('Snapped: ' + snap.type);
-                    this.canvas.style.cursor = 'crosshair';
+                    // this.canvas.style.cursor = 'crosshair';
                     currentPoint = snap.point;
                 } else {
-                    this.canvas.style.cursor = 'default';
+                    // this.canvas.style.cursor = 'default';
                     const camera = this.viewer.camera;
                     const vec = new THREE.Vector3(x, y, 0);
                     vec.unproject(camera);
@@ -461,6 +551,97 @@ class DXFViewerApp {
             }
 
             this.measurementManager.handleClick(point, hitObject);
+            return;
+        }
+
+        // Area Tool (Visible Surface)
+        if (this.measurementManager && this.measurementManager.activeTool === 'area') {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            const pointer = new THREE.Vector2(x, y);
+            const intersects = this.viewer.raycast(pointer);
+
+            if (intersects.length > 0) {
+                const hitObject = intersects[0].object;
+                let target = hitObject;
+                // Handle Dimension/Insert parents if needed (similar to selection logic)
+                if (hitObject.parent && hitObject.parent.userData && (hitObject.parent.userData.type === 'DIMENSION' || hitObject.parent.userData.type === 'INSERT')) {
+                    target = hitObject.parent;
+                }
+
+                // 1. Select the chain
+                this.clearSelection();
+                this.performChainSelection([target]);
+
+                // 2. Calculate Total Perimeter
+                let totalLength = 0;
+                if (this.selectedObjects.length > 0) {
+                    this.selectedObjects.forEach(obj => {
+                        // Length Calculation Logic
+                        if (obj.userData.entity) {
+                            const ent = obj.userData.entity;
+                            if (ent.type === 'LINE') {
+                                // Simple distance
+                                const p1 = new THREE.Vector3(ent.start.x, ent.start.y, 0);
+                                const p2 = new THREE.Vector3(ent.end.x, ent.end.y, 0);
+                                totalLength += p1.distanceTo(p2);
+                            } else if (ent.type === 'ARC') {
+                                const r = ent.radius;
+                                let diff = ent.endAngle - ent.startAngle;
+                                if (diff < 0) diff += Math.PI * 2;
+                                totalLength += r * diff;
+                            } else if (ent.type === 'CIRCLE') {
+                                totalLength += 2 * Math.PI * ent.radius;
+                            } else if (ent.type === 'LWPOLYLINE' || ent.type === 'POLYLINE') {
+                                // If dxf-parser passed vertices
+                                if (ent.vertices && ent.vertices.length > 1) {
+                                    for (let i = 0; i < ent.vertices.length; i++) {
+                                        // If closed or not last segment
+                                        if (!ent.closed && i === ent.vertices.length - 1) continue;
+                                        const v1 = ent.vertices[i];
+                                        const v2 = ent.vertices[(i + 1) % ent.vertices.length];
+
+                                        // Add Bulge (Arc segment) or Line
+                                        if (v1.bulge && Math.abs(v1.bulge) > 1e-9) {
+                                            const b = v1.bulge;
+                                            const chord = Math.hypot(v2.x - v1.x, v2.y - v1.y);
+                                            const theta = 4 * Math.atan(Math.abs(b));
+                                            const arcLen = (chord / 2) * (theta / Math.sin(theta / 2)); // s = r*theta, r = chord/(2*sin(theta/2))
+                                            totalLength += arcLen;
+                                        } else {
+                                            totalLength += Math.hypot(v2.x - v1.x, v2.y - v1.y);
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (obj.isLine) {
+                            // Fallback for THREE.Line without entity data
+                            obj.computeLineDistances(); // ensure check
+                            // Just sum distance between points
+                            // Assuming simple line segment
+                            const pos = obj.geometry.attributes.position;
+                            if (pos && pos.count >= 2) {
+                                const p1 = new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0));
+                                const p2 = new THREE.Vector3(pos.getX(1), pos.getY(1), pos.getZ(1));
+                                totalLength += p1.distanceTo(p2);
+                            }
+                        }
+                    });
+
+                    // 3. Display Result
+                    // Snap point or click point
+                    let p = new THREE.Vector3(x, y, 0);
+                    p.unproject(this.viewer.camera);
+                    p.z = 0;
+                    if (this.snappingManager && this.snappingManager.activeSnap) {
+                        p = this.snappingManager.activeSnap.point;
+                    }
+
+                    this.measurementManager.showAreaMeasurement(p, totalLength);
+                    console.log(`Visible Surface (Perimeter): ${totalLength}`);
+                }
+            }
             return;
         }
 
