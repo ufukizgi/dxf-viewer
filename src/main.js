@@ -27,6 +27,7 @@ class DXFViewerApp {
 
         this.viewer = new SceneViewer(this.canvas);
         this.viewer.languageManager = this.languageManager;
+        this.viewer.app = this; // Link app to viewer for callbacks (e.g. from MeasurementManager)
 
         this.loader = new DxfLoader();
         this.dxf = null;
@@ -279,6 +280,21 @@ class DXFViewerApp {
                 measureMenuBtn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-400');
             } else {
                 measureMenuBtn.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-400');
+                // Force reset to base classes just in case
+                measureMenuBtn.className = 'icon-btn tool-btn';
+                // But wait, if we use className we lose other things like ID or other mixed classes if any?
+                // The user said: class="icon-btn tool-btn" OK.
+                // The element is defined in HTML.
+                // The safest way is to remove specific keys.
+                // The user complained it STAYS bg-cyan...
+                // The current code ALREADY removes them: .remove('active', 'bg-cyan-500/20', 'text-cyan-400');
+                // Maybe the 'bg-cyan-500/20' string with slash is causing issues in classList.remove with multiple args in some browsers?
+                // Or maybe standard DOMTokenList doesn't handle space-separated strings if passed as single arg?
+                // 'bg-cyan-500/20' is one class.
+                // Let's break it down to be safe.
+                measureMenuBtn.classList.remove('active');
+                measureMenuBtn.classList.remove('bg-cyan-500/20');
+                measureMenuBtn.classList.remove('text-cyan-400');
             }
 
             // Optional: You could also highlight the specific item in the list
@@ -344,6 +360,7 @@ class DXFViewerApp {
             // Priority 1: Cancel active measurement if in progress
             if (this.measurementManager && this.measurementManager.activeTool && this.measurementManager.measurementPoints && this.measurementManager.measurementPoints.length > 0) {
                 this.measurementManager.cancel();
+                if (this.snappingManager) this.snappingManager.clearSticky(); // Clear sticky
                 this.updateStatus(this.languageManager.translate('ready'));
                 return;
             }
@@ -421,13 +438,19 @@ class DXFViewerApp {
         if (!this.selectionState.isDragging) {
             let currentPoint = null;
             if (this.snappingManager) {
-                const snap = this.snappingManager.findSnapPoint({ x, y });
-                if (snap) {
-                    this.updateStatus('Snapped: ' + snap.type);
-                    // this.canvas.style.cursor = 'crosshair';
-                    currentPoint = snap.point;
+                // OSNAP only active in Linear Measurement Mode
+                if (this.measurementManager && this.measurementManager.activeTool === 'distance') {
+                    const snap = this.snappingManager.findSnapPoint({ x, y });
+                    if (snap) {
+                        this.updateStatus('Snapped: ' + snap.type);
+                        currentPoint = snap.point;
+                    }
                 } else {
-                    // this.canvas.style.cursor = 'default';
+                    // Force clear if not in distance mode (just to be safe)
+                    this.snappingManager.clearMarker();
+                }
+
+                if (!currentPoint) {
                     const camera = this.viewer.camera;
                     const vec = new THREE.Vector3(x, y, 0);
                     vec.unproject(camera);
@@ -551,6 +574,7 @@ class DXFViewerApp {
             }
 
             this.measurementManager.handleClick(point, hitObject);
+            if (this.snappingManager) this.snappingManager.clearSticky(); // Clear sticky after click
             return;
         }
 

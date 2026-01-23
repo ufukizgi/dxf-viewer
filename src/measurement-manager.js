@@ -27,6 +27,7 @@ export class MeasurementManager {
         this.points = [];
         this.clearTemp();
         this.activeScale = 1.0; // Reset scale
+        if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
         console.log(`Measurement Tool Activated: ${tool}`);
 
         // Initial status message
@@ -43,7 +44,8 @@ export class MeasurementManager {
         this.activeTool = null;
         this.points = [];
         this.clearTemp();
-        this.activeScale = 1.0;
+        this.activeScale = 1.0; // Reset scale
+        if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
         this.onStatusUpdate('Ready');
 
         // Reset UI via main app callback if available, or try to access it
@@ -65,6 +67,7 @@ export class MeasurementManager {
         this.points = [];
         this.clearTemp();
         this.activeScale = 1.0;
+        if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
         if (this.activeTool) {
             // Re-prompt for first step
             this.activateTool(this.activeTool);
@@ -169,6 +172,8 @@ export class MeasurementManager {
                 this.points = [];
                 this.clearTemp();
                 this.activeScale = 1.0;
+                // Cleanup sticky snap
+                if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
             }
         }
 
@@ -450,6 +455,27 @@ export class MeasurementManager {
         const arcGeom = new THREE.BufferGeometry().setFromPoints(arcPts);
         const arc = new THREE.Line(arcGeom, material);
         group.add(arc);
+
+        // Extension Lines (Guidelines)
+        // From Center to Arc Start (a1) and Arc End (a2)
+        // Helps visualize which lines are being measured
+        // P_start_guide = Center + (r * vector_a1)
+        const pGuideStart = new THREE.Vector3(
+            center.x + Math.cos(a1) * r,
+            center.y + Math.sin(a1) * r,
+            0
+        );
+        const pGuideEnd = new THREE.Vector3(
+            center.x + Math.cos(a2) * r,
+            center.y + Math.sin(a2) * r,
+            0
+        );
+
+        // Draw guideline from Center to Arrow Tip
+        // Use a dashed material? Or same material but lighter?
+        // User requested "Green guide lines". We use the same material.
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, pGuideStart]), material));
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, pGuideEnd]), material));
 
         // 4. Arrows
         const arrowLen = 3.0;
@@ -923,6 +949,9 @@ export class MeasurementManager {
             if (angle < -Math.PI / 2) angle += Math.PI;
         }
 
+        // Precision Clamp
+        if (val < 1e-6) val = 0;
+
         return {
             type,
             value: val,
@@ -957,7 +986,7 @@ export class MeasurementManager {
 
         const dimLength = dimP1.distanceTo(dimP2);
         const requiredSpace = (arrowLen * 2.2) + textWidth; // 1.1x arrowLen margin per side
-        console.log(dimLength, requiredSpace);
+        //console.log(dimLength, requiredSpace);
 
         const isTight = dimLength < requiredSpace;
 

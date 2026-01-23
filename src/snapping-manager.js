@@ -33,6 +33,9 @@ export class SnappingManager {
 
         // Materials
         this.markerMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, depthTest: false }); // Green
+
+        // Sticky Snap State (for Arc/Circle centers)
+        this.stickySnaps = [];
     }
 
     findSnapPoint(pointer) {
@@ -58,7 +61,7 @@ export class SnappingManager {
         // Get candidates
         const intersects = this.raycaster.intersectObjects(this.viewer.dxfGroup.children, true);
 
-        if (intersects.length === 0) return null;
+        // if (intersects.length === 0) return null; // Removed to allow sticky snap to persist in empty space
 
         // 3. Iterate candidates and find closest snap point
         let closestSnap = null;
@@ -161,8 +164,57 @@ export class SnappingManager {
         }
 
         if (closestSnap) {
+            // Sticky Logic: If it's a center snap, add to sticky list
+            if (closestSnap.type === 'center') {
+                // Deduplicate based on Object ID
+                const exists = this.stickySnaps.some(s => s.object.id === closestSnap.object.id);
+                if (!exists) {
+                    this.stickySnaps.push(closestSnap);
+                }
+            }
+        }
+
+        // Draw Markers for ALL Sticky Snaps
+        this.stickySnaps.forEach(snap => {
+            this.drawSnapMarker(snap);
+        });
+
+        // Determine functionality and draw primary snap
+        if (closestSnap) {
             this.activeSnap = closestSnap;
-            this.drawSnapMarker(closestSnap);
+            // Draw closest snap if it's NOT in the sticky list (to avoid double drawing / visual clash)
+            // Or just draw it if it's different.
+            // Simple check: same type and very close position
+            let alreadyDrawn = false;
+            for (const s of this.stickySnaps) {
+                if (s.type === closestSnap.type && s.point.distanceTo(closestSnap.point) < 0.001) {
+                    alreadyDrawn = true;
+                    break;
+                }
+            }
+
+            if (!alreadyDrawn) {
+                this.drawSnapMarker(closestSnap);
+            }
+        } else if (this.stickySnaps.length > 0) {
+            // No new snap found -> Fallback to closest sticky
+            // Find closest sticky to cursor in screen space or world space? 
+            // World space is cleaner.
+
+            let bestSticky = null;
+            let bestDistSq = Infinity;
+
+            this.stickySnaps.forEach(snap => {
+                const dSq = cursorWorld.distanceToSquared(snap.point);
+                if (dSq < bestDistSq) {
+                    bestDistSq = dSq;
+                    bestSticky = snap;
+                }
+            });
+
+            if (bestSticky && bestDistSq < (worldThreshold * worldThreshold)) {
+                this.activeSnap = bestSticky;
+            }
         }
 
         return this.activeSnap;
@@ -420,6 +472,12 @@ export class SnappingManager {
             if (c.geometry) c.geometry.dispose();
             this.markerGroup.remove(c);
         }
+    }
+
+    clearSticky() {
+        this.stickySnaps = [];
+        this.activeSnap = null;
+        this.clearMarker();
     }
 
     calculateBulgeCenter(p1, p2, bulge) {
