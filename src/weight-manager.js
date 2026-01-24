@@ -44,6 +44,8 @@ export class WeightManager {
 
         // Active state for trigger (Manual mode)
         this.isActive = false;
+
+        this.templateRotation = 0;
     }
 
     init() {
@@ -305,6 +307,7 @@ export class WeightManager {
         this.templateMode = true;
         this.scrollSteps = 0;
         this.templateScale = 1.0;
+        this.templateRotation = 0;
         this._hasLoggedPosition = false; // Reset debug flag
 
         // Step 1: Clone selected entities into floatingGroup
@@ -533,19 +536,31 @@ export class WeightManager {
         event.preventDefault();
         event.stopPropagation();
 
-        // Each scroll step = ±5% of original scale
-        const delta = event.deltaY > 0 ? -1 : 1;
-        this.scrollSteps += delta;
-        this.templateScale = 1.0 + (0.05 * this.scrollSteps);
-        this.templateScale = Math.max(0.1, Math.min(10, this.templateScale)); // Clamp 0.1 to 10
+        if (event.ctrlKey) {
+            // Rotate: 1 degree per step (PI/180)
+            // Scroll UP (negative deltaY) -> Rotate Counter-Clockwise (positive angle)
+            // Scroll DOWN (positive deltaY) -> Rotate Clockwise (negative angle)
+            const delta = event.deltaY > 0 ? -1 : 1;
+            const rotationStep = Math.PI / 180; // 1 degree
+            this.templateRotation += delta * rotationStep;
 
-        this.applyFloatingScale();
+            // Normalize to 0..2PI if desired, but not strictly necessary for display
+        } else {
+            // Scale: Each scroll step = ±5% of original scale
+            const delta = event.deltaY > 0 ? -1 : 1;
+            this.scrollSteps += delta;
+            this.templateScale = 1.0 + (0.05 * this.scrollSteps);
+            this.templateScale = Math.max(0.1, Math.min(10, this.templateScale)); // Clamp 0.1 to 10
+        }
+
+        this.applyFloatingTransform();
         this.updateScaleDisplay();
     }
 
-    applyFloatingScale() {
+    applyFloatingTransform() {
         if (this.floatingGroup) {
             this.floatingGroup.scale.set(this.templateScale, this.templateScale, 1);
+            this.floatingGroup.rotation.z = this.templateRotation;
         }
     }
 
@@ -609,34 +624,28 @@ export class WeightManager {
         }
 
         // Collect all children to transfer
+        // Note: we can't iterate over .children directly while modifying it (attach removes child)
         const children = [...this.floatingGroup.children];
 
+        // Ensure matrices are up to date before attaching
+        this.floatingGroup.updateMatrixWorld(true);
+        this.viewer.dxfGroup.updateMatrixWorld(true);
+
         for (const child of children) {
-            // Apply scale to geometry (group scale was visual, now bake it)
-            child.scale.multiplyScalar(scale);
-
-            // Apply position offset (child position is relative to group)
-            child.position.x = (child.position.x * scale) + position.x;
-            child.position.y = (child.position.y * scale) + position.y;
-            child.position.z = (child.position.z * scale) + position.z;
-
-            // Update matrices
-            child.updateMatrix();
-            child.updateMatrixWorld(true);
+            // Use attach to preserve world transform (pos, rot, scale) while reparenting
+            this.viewer.dxfGroup.attach(child);
 
             // Mark as placed geometry
             child.userData.isPlacedGeometry = true;
             child.userData.placementScale = scale;
-
-            // Add to dxfGroup
-            this.viewer.dxfGroup.add(child);
+            child.userData.placementRotation = this.templateRotation; // Store rotation for record
         }
 
         // Remove floating group from scene
         this.viewer.scene.remove(this.floatingGroup);
         this.floatingGroup = null;
 
-        console.log(`[WeightManager] Merged ${children.length} floating entities into dxfGroup`);
+        console.log(`[WeightManager] Merged ${children.length} floating entities into dxfGroup using attach`);
     }
 
     mergeTemplateIntoDxfGroup(position, scale) {
