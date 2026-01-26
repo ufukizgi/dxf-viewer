@@ -49,7 +49,8 @@
                 </button>
 
                 <!-- Print Button (Moved) -->
-                <button class="icon-btn tool-btn ml-2" id="print-btn" title="Print" data-i18n-title="print">
+                <button class="icon-btn tool-btn ml-2 disabled:opacity-30 disabled:cursor-not-allowed" id="print-btn"
+                    title="Print" data-i18n-title="print" disabled>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M6 9V2h12v7" />
                         <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
@@ -84,129 +85,138 @@
             </div>
 
             <div class="header-center">
-                <div class="header-tools">
-                    <!-- Measure Dropdown -->
-                    <div class="relative group" id="measure-dropdown-container">
-                        <button class="icon-btn tool-btn" id="measure-menu-btn" title="Measurement Tools"
-                            data-i18n-title="measureTools">
-                            <!-- Custom SVG provided by user -->
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M1 3 V21"></path>
-                                <path d="M23 3 V21"></path>
-                                <path d="M8 8 L3 12 L8 16"></path>
-                                <path d="M16 8 L21 12 L16 16"></path>
-                                <path d="M3 12 H21"></path>
-                            </svg>
-                        </button>
+                <div class="header-tools flex items-center gap-1">
+                    <!-- Measurement Tools (Unwrapped) -->
 
-                        <!-- Dropdown Menu -->
-                        <div class="hidden absolute top-full left-0 mt-2 p-1.5 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[200px] flex flex-col gap-1 z-50"
-                            id="measure-dropdown-menu">
+                    <!-- Linear -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="tool-distance" title="Linear Measurement" data-i18n-title="measureDistance"
+                        data-tool="distance" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M1 3 V21" />
+                            <path d="M23 3 V21" />
+                            <path d="M8 8 L3 12 L8 16" />
+                            <path d="M16 8 L21 12 L16 16" />
+                            <path d="M3 12 H21" />
+                        </svg>
+                    </button>
 
-                            <!-- Linear -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                                data-tool="distance">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M1 3 V21" />
-                                    <path d="M23 3 V21" />
-                                    <path d="M8 8 L3 12 L8 16" />
-                                    <path d="M16 8 L21 12 L16 16" />
-                                    <path d="M3 12 H21" />
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="measureDistance">Linear</span>
-                            </button>
+                    <!-- Angle -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="tool-angle" title="Angle Measurement" data-i18n-title="measureAngle" data-tool="angle"
+                        disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M18 3 L3 22 L22 22" />
+                            <path d="M9 14 A5 5 30 0 1 12 22" fill="none" />
+                        </svg>
+                    </button>
 
-                            <!-- Angle -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                                data-tool="angle">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M18 3 L3 22 L22 22" />
-                                    <path d="M9 14 A5 5 30 0 1 12 22" fill="none" />
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="measureAngle">Angle</span>
-                            </button>
+                    <!-- Radius -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="tool-radius" title="Radius Measurement" data-i18n-title="measureRadius" data-tool="radius"
+                        disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="12" x2="22" y2="12" />
+                            <text x="14" y="10" font-size="8" fill="white" stroke="none">R</text>
+                        </svg>
+                    </button>
 
-                            <!-- Radius -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                                data-tool="radius">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <line x1="12" y1="12" x2="22" y2="12" />
-                                    <text x="14" y="10" font-size="8" fill="white" stroke="none">R</text>
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="measureRadius">Radius</span>
-                            </button>
+                    <!-- Diameter -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="tool-diameter" title="Diameter Measurement" data-i18n-title="measureDiameter"
+                        data-tool="diameter" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="2" y1="12" x2="22" y2="12" />
+                            <path d="M4 10 L2 12 L4 14" />
+                            <path d="M20 10 L22 12 L20 14" />
+                            <text x="11" y="10" font-size="8" fill="white" stroke="none">Ø</text>
+                        </svg>
+                    </button>
 
-                            <!-- Diameter -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                                data-tool="diameter">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <circle cx="12" cy="12" r="10" />
-                                    <line x1="2" y1="12" x2="22" y2="12" />
-                                    <path d="M4 10 L2 12 L4 14" />
-                                    <path d="M20 10 L22 12 L20 14" />
-                                    <text x="11" y="10" font-size="8" fill="white" stroke="none">Ø</text>
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="measureDiameter">Diameter</span>
-                            </button>
+                    <!-- Area -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="tool-area" title="Area Measurement" data-i18n-title="measureArea" data-tool="area" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <rect x="2" y="2" width="20" height="20" />
+                            <path d="M2 2 L22 22" />
+                            <path d="M22 2 L2 22" />
+                        </svg>
+                    </button>
 
-                            <!-- Visible Surface -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left"
-                                data-tool="area">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <rect x="2" y="2" width="20" height="20" />
-                                    <path d="M2 2 L22 22" />
-                                    <path d="M22 2 L2 22" />
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="measureArea">Visible
-                                    Surface</span>
-                            </button>
+                    <div class="h-6 w-px bg-white/10 mx-2"></div>
 
-                            <hr class="border-white/10 my-1">
-
-                            <!-- Weight Calculation (Moved to Dropdown) -->
-                            <button
-                                class="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors text-left opacity-50 cursor-not-allowed group-is-disabled"
-                                id="weight-btn" title="Calculate Weight" data-i18n-title="weightBtn">
-                                <!-- User provided SVG, adapted fill to currentColor for dark mode -->
-                                <svg width="18" height="18" viewBox="0 0 76 76" xmlns="http://www.w3.org/2000/svg"
-                                    version="1.1" fill="currentColor">
-                                    <path stroke-width="0.2" stroke-linejoin="round"
-                                        d="M 38.7916,15.8334C 40.5405,15.8334 40.375,17.2511 40.375,19L 40.4805,22.1667L 58.5833,22.1667L 58.5833,25.3333L 56.5258,25.3333L 64.9167,45.125C 64.9167,48.1856 59.8717,50.6667 54.625,50.6667C 49.3783,50.6667 44.3333,48.1856 44.3333,45.125L 52.7242,25.3333L 40.5861,25.3333L 41.5394,53.9324C 47.6545,54.3801 52.25,56.2923 52.25,58.5833L 25.3333,58.5833C 25.3333,56.2923 29.9288,54.3801 36.0439,53.9324L 36.9972,25.3333L 23.2758,25.3334L 31.6667,45.125C 31.6667,48.1856 26.6217,50.6667 21.375,50.6667C 16.1283,50.6667 11.0833,48.1856 11.0833,45.125L 19.4742,25.3334L 17.4167,25.3333L 17.4167,22.1667L 37.1027,22.1667L 37.2083,19C 37.2083,17.2511 37.0427,15.8334 38.7916,15.8334 Z M 61.2191,45.125L 55.4167,30.7634L 55.4167,45.125L 61.2191,45.125 Z M 48.0308,45.125L 53.8333,45.125L 53.8333,30.7634L 48.0308,45.125 Z M 27.9691,45.125L 22.1667,30.7634L 22.1667,45.125L 27.9691,45.125 Z M 14.7808,45.125L 20.5833,45.125L 20.5833,30.7634L 14.7808,45.125 Z " />
-                                </svg>
-                                <span class="text-sm font-medium text-white" data-i18n="weightBtn">Weight Calc.</span>
-                            </button>
-
-                        </div>
-                    </div>
-
-
+                    <!-- Weight Calculation -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="weight-btn" title="Calculate Weight" data-i18n-title="weightBtn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="1" x2="12" y2="23" />
+                            <line x1="5" y1="3.5" x2="19" y2="3.5" />
+                            <line x1="5" y1="3.5" x2="1" y2="15" />
+                            <line x1="5" y1="3.5" x2="9" y2="15" />
+                            <line x1="19" y1="3.5" x2="23" y2="15" />
+                            <line x1="19" y1="3.5" x2="15" y2="15" />
+                            <line x1="6" y1="23" x2="18" y2="23" />
+                            <line x1="1" y1="15" x2="9" y2="15" />
+                            <line x1="15" y1="15" x2="23" y2="15" />
+                        </svg>
+                    </button>
                 </div>
 
-                <!-- Layers Dropdown -->
-                <div class="relative layers-dropdown ml-2 border-l border-white/10 pl-2">
-                    <button id="layers-toggle" class="icon-btn tool-btn" title="Layers" data-i18n-title="layers">
+                <!-- Layers Dropdown (Refactored) -->
+                <div class="relative layers-container ml-4 border-l border-white/10 pl-4 flex items-center gap-2 group"
+                    id="layers-group">
+                    <button class="icon-btn tool-btn" title="Layers" data-i18n-title="layers">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke-width="2" />
                         </svg>
                     </button>
-                    <div id="layers-menu"
-                        class="settings-menu hidden absolute top-full left-1/2 -translate-x-1/2 mt-2 p-4 rounded-xl bg-gray-900/95 backdrop-blur-xl border border-white/10 shadow-2xl min-w-[240px]"
-                        style="z-index: 1000;">
-                        <h3 class="text-sm font-semibold mb-3 text-white">Layers</h3>
-                        <div id="layers-panel" class="space-y-2 scrollable-panel" style="max-height: 300px;">
-                            <p class="empty-state">No layers available</p>
+
+                    <!-- Dropdown Wrapper (Width Fixed for layout) -->
+                    <div class="relative w-[180px] h-9 group z-50">
+                        <!-- Simplified Menu (Collapses to Single Line, Expands on Hover) -->
+                        <div id="layers-menu"
+                            class="absolute top-0 right-0 w-full bg-gray-900/90 backdrop-blur-md border border-white/10 rounded-lg shadow-xl overflow-hidden h-9 transition-[height] duration-300 ease-in-out group-hover:h-auto group-hover:bg-gray-900/95"
+                            style="min-width: 100%;">
+
+                            <!-- Header Section (Always Visible) -->
+                            <div
+                                class="h-9 px-3 flex items-center justify-between cursor-pointer border-b border-transparent group-hover:border-white/10 select-none">
+                                <div class="flex items-center gap-2 flex-1 min-w-0">
+                                    <div id="layer-header-color" class="w-3 h-3 rounded-sm border border-white/20"
+                                        style="background-color: white;"></div>
+                                    <span id="layer-header-name"
+                                        class="text-xs text-gray-200 font-medium truncate">0</span>
+                                </div>
+
+                                <div class="flex items-center gap-2 pl-2">
+                                    <div id="layer-header-visible"
+                                        class="text-gray-400 hover:text-white flex items-center justify-center">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2">
+                                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                            <circle cx="12" cy="12" r="3" />
+                                        </svg>
+                                    </div>
+                                    <svg class="w-3 h-3 text-gray-500 group-hover:rotate-180 transition-transform"
+                                        fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- List Content (Visible on Expand) -->
+                            <div id="layers-panel" class="p-2 space-y-1 max-h-[400px] overflow-y-auto custom-scrollbar">
+                                <p class="empty-state text-xs text-center py-2 text-gray-500">No layers</p>
+                            </div>
                         </div>
                     </div>
                 </div>

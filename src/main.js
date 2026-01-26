@@ -200,24 +200,7 @@ class DXFViewerApp {
             });
         }
 
-        // Layers toggle
-        const layersToggleBtn = document.getElementById('layers-toggle');
-        const layersMenu = document.getElementById('layers-menu');
 
-        if (layersToggleBtn && layersMenu) {
-            layersToggleBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                layersMenu.classList.toggle('hidden');
-                layersToggleBtn.classList.toggle('bg-white/20');
-            });
-
-            document.addEventListener('click', (e) => {
-                if (!layersMenu.contains(e.target) && !layersToggleBtn.contains(e.target)) {
-                    layersMenu.classList.add('hidden');
-                    layersToggleBtn.classList.remove('bg-white/20');
-                }
-            });
-        }
 
         const bgColorArgs = document.getElementById('bg-color');
         if (bgColorArgs) {
@@ -226,113 +209,102 @@ class DXFViewerApp {
             });
         }
 
-        // Measurement Dropdown
-        const measureMenuBtn = document.getElementById('measure-menu-btn');
-        const measureMenu = document.getElementById('measure-dropdown-menu');
-        const measureContainer = document.getElementById('measure-dropdown-container');
+        // Measurement Tools - Top Bar (Unwrapped)
+        const toolIds = [
+            'tool-distance', 'tool-angle', 'tool-radius',
+            'tool-diameter', 'tool-area'
+        ];
 
-        if (measureMenuBtn && measureMenu) {
-            // Toggle Dropdown
-            measureMenuBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                measureMenu.classList.toggle('hidden');
-                // measureMenuBtn.classList.toggle('bg-white/20'); // Optional visual feedback for open menu
-            });
+        const toolBtns = {};
+        toolIds.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                // Map by tool name for easy access
+                toolBtns[btn.dataset.tool] = btn;
 
-            // Close menu when Weight Calculation is clicked
-            const weightBtn = document.getElementById('weight-btn');
-            if (weightBtn) {
-                weightBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (this.weightManager) {
-                        this.weightManager.toggleActive();
-                        updateMeasureUI();
-                    }
-                    measureMenu.classList.add('hidden');
-                });
-            }
-
-            // Close on outside click
-            document.addEventListener('click', (e) => {
-                if (measureContainer && !measureContainer.contains(e.target)) {
-                    measureMenu.classList.add('hidden');
-                }
-            });
-
-            // Tool Selection
-            const toolBtns = measureContainer.querySelectorAll('[data-tool]');
-            toolBtns.forEach(btn => {
                 btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     const tool = btn.dataset.tool;
 
-                    // Activate Tool
-                    if (tool === 'distance' || tool === 'angle') {
+                    // Toggle behavior: if already active, deactivate.
+                    if (this.measurementManager.activeTool === tool) {
+                        this.measurementManager.deactivateTool();
+                    } else {
+                        // Activate new tool (Manager handles clearing others)
                         this.measurementManager.activateTool(tool);
-                    } else if (tool === 'radius' || tool === 'diameter' || tool === 'area') {
-                        this.measurementManager.activateTool(tool);
+
+                        // If Weight mode is active, deactivate it?
+                        if (this.weightManager && this.weightManager.isActive) {
+                            this.weightManager.toggleActive(); // Turn off
+                        }
                     }
-
-                    // Update UI
-                    updateMeasureUI(tool);
-
-                    // Close Menu
-                    measureMenu.classList.add('hidden');
-
-                    // Status Message
-                    let msg = '';
-                    switch (tool) {
-                        case 'distance': msg = this.languageManager.translate('instrDistance') || 'Two points'; break;
-                        case 'angle': msg = this.languageManager.translate('instrAngle') || 'Two lines'; break;
-                        case 'radius': msg = this.languageManager.translate('instrRadius') || 'Click arc/circle'; break;
-                        case 'diameter': msg = this.languageManager.translate('instrDiameter') || 'Click arc/circle for diameter'; break;
-                        case 'area': msg = this.languageManager.translate('instrArea') || 'Visible Surface'; break;
-                    }
-                    this.updateStatus(msg);
+                    updateMeasureUI();
                 });
+            }
+        });
+
+        // Weight Button
+        const weightBtn = document.getElementById('weight-btn');
+        if (weightBtn) {
+            weightBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.weightManager) {
+                    // Toggle Weight Mode
+                    this.weightManager.toggleActive();
+
+                    // If activating Weight, deactivate any active measurement tool
+                    if (this.weightManager.isActive) {
+                        this.measurementManager.deactivateTool();
+                    }
+                    updateMeasureUI();
+                }
             });
         }
 
+        // Updated UI Sync Function
         const updateMeasureUI = (activeTool) => {
-            // Highlight main button if ANY tool is active OR Weight Mode is active
+            // Determine current active tool (arg or from manager)
+            const currentTool = activeTool || (this.measurementManager ? this.measurementManager.activeTool : null);
             const isWeightActive = this.weightManager && this.weightManager.isActive;
-            // activeTool is passed, OR check measurementManager.activeTool if explicit
-            const currentMeasureTool = activeTool || (this.measurementManager ? this.measurementManager.activeTool : null);
 
-            if (currentMeasureTool || isWeightActive) {
-                measureMenuBtn.classList.add('active', 'bg-cyan-500/20', 'text-cyan-400');
-            } else {
-                measureMenuBtn.classList.remove('active', 'bg-cyan-500/20', 'text-cyan-400');
-                // Force reset to base classes just in case
-                measureMenuBtn.className = 'icon-btn tool-btn';
-                // But wait, if we use className we lose other things like ID or other mixed classes if any?
-                // The user said: class="icon-btn tool-btn" OK.
-                // The element is defined in HTML.
-                // The safest way is to remove specific keys.
-                // The user complained it STAYS bg-cyan...
-                // The current code ALREADY removes them: .remove('active', 'bg-cyan-500/20', 'text-cyan-400');
-                // Maybe the 'bg-cyan-500/20' string with slash is causing issues in classList.remove with multiple args in some browsers?
-                // Or maybe standard DOMTokenList doesn't handle space-separated strings if passed as single arg?
-                // 'bg-cyan-500/20' is one class.
-                // Let's break it down to be safe.
-                measureMenuBtn.classList.remove('active');
-                measureMenuBtn.classList.remove('bg-cyan-500/20');
-                measureMenuBtn.classList.remove('text-cyan-400');
+            // 1. Reset all measurement tool buttons
+            Object.values(toolBtns).forEach(btn => {
+                btn.classList.remove('bg-cyan-500/20', 'text-[#00d9ff]', 'active');
+            });
+
+            // 2. Highlight active tool if any
+            if (currentTool && toolBtns[currentTool]) {
+                toolBtns[currentTool].classList.add('bg-cyan-500/20', 'text-[#00d9ff]', 'active');
             }
 
-            // Optional: You could also highlight the specific item in the list
-            if (measureMenu) {
-                const toolBtns = measureMenu.querySelectorAll('[data-tool]');
-                toolBtns.forEach(btn => {
-                    if (btn.dataset.tool === currentMeasureTool) {
-                        btn.classList.add('bg-white/10');
-                    } else {
-                        btn.classList.remove('bg-white/10');
-                    }
-                });
+            // 3. Handle Weight Button
+            if (weightBtn) {
+                if (isWeightActive) {
+                    weightBtn.classList.add('bg-cyan-500/20', 'text-[#00d9ff]', 'active');
+                } else {
+                    weightBtn.classList.remove('bg-cyan-500/20', 'text-[#00d9ff]', 'active');
+                }
             }
         };
 
-        // Expose for external clearing (e.g. deactivateTool)
+        const updateWeightButtonState = (hasSelection) => {
+            if (weightBtn) {
+                if (hasSelection) {
+                    weightBtn.removeAttribute('disabled');
+                    weightBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                } else {
+                    weightBtn.setAttribute('disabled', 'true');
+                    weightBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    // Also deactivate if active
+                    if (this.weightManager && this.weightManager.isActive) {
+                        this.weightManager.toggleActive();
+                        updateMeasureUI();
+                    }
+                }
+            }
+        };
+        this.updateWeightButtonState = updateWeightButtonState;
+
         this.updateMeasureUI = updateMeasureUI;
 
         // Ensure WeightManager knows how to update main UI on close? 
@@ -461,7 +433,10 @@ class DXFViewerApp {
                 this.objectInfoManager.update([]);
                 this.weightManager.update([]);
                 document.getElementById('selection-box')?.classList.add('hidden');
+                this.weightManager.update([]);
+                document.getElementById('selection-box')?.classList.add('hidden');
                 this.updateStatus('Deleted ' + cmd.selection.length + ' items');
+                this.updateWeightButtonState(false);
             }
         );
 
@@ -490,7 +465,9 @@ class DXFViewerApp {
         }
         this.selectedObjects = [];
         this.objectInfoManager.update(this.selectedObjects);
+        this.objectInfoManager.update(this.selectedObjects);
         this.weightManager.update(this.selectedObjects);
+        this.updateWeightButtonState(false);
         this.updateStatus(this.languageManager.translate('selectionCleared'));
     }
 
@@ -605,7 +582,9 @@ class DXFViewerApp {
                     }
                 });
                 this.objectInfoManager.update(this.selectedObjects);
+                this.objectInfoManager.update(this.selectedObjects);
                 this.weightManager.update(this.selectedObjects);
+                this.updateWeightButtonState(this.selectedObjects.length > 0);
             } else {
                 this.updateStatus('No items found in box');
             }
@@ -1089,6 +1068,21 @@ class DXFViewerApp {
                 if (fileNameEl) fileNameEl.innerText = file.name;
             }
 
+            // Enable Measurement Tools & Action Buttons
+            const ids = ['tool-distance', 'tool-angle', 'tool-radius', 'tool-diameter', 'tool-area', 'download-btn', 'print-btn'];
+            ids.forEach(id => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    btn.removeAttribute('disabled');
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed', 'disabled:opacity-30', 'disabled:opacity-50');
+                    // Removing all potential opacity classes to be safe
+                    // Note: The HTML uses disabled:opacity-30 for print/download and opacity-50 for tools.
+                    // Just removing 'opacity-50' might not be enough if 'disabled:opacity-30' is used with 'disabled' attr.
+                    // But removing 'disabled' attribute stops the disabled: classes from applying.
+                    // Keeping clean class removal for manually added utility classes if any.
+                }
+            });
+
             this.viewer.zoomExtents();
 
             const overlay = document.getElementById('viewport-overlay');
@@ -1199,6 +1193,40 @@ class DXFViewerApp {
             layerItem.appendChild(leftSide);
             layerItem.appendChild(eyeBtn);
             layersPanel.appendChild(layerItem);
+        }
+
+        // Update the header to reflect the "Active" (First?) layer or just the first in list
+        this.updateLayerHeader(layerMap);
+    }
+
+    updateLayerHeader(layerMap) {
+        if (layerMap.size === 0) return;
+
+        // Default to first layer for the header display
+        const firstLayer = layerMap.values().next().value;
+        if (!firstLayer) return;
+
+        const headerColor = document.getElementById('layer-header-color');
+        const headerName = document.getElementById('layer-header-name');
+        const headerVisible = document.getElementById('layer-header-visible');
+
+        if (headerColor) headerColor.style.backgroundColor = '#' + firstLayer.color.getHexString();
+        if (headerName) headerName.textContent = firstLayer.name;
+
+        // Update Eye Icon based on visibility
+        if (headerVisible) {
+            const isVisible = firstLayer.visible;
+            headerVisible.innerHTML = isVisible
+                ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>`
+                : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M1 1l22 22" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /></svg>`;
+
+            // Remove old listeners to prevent duplicates (simple way: clone node)
+            // Or better: ensure we only attach once? But this runs on every update.
+            // Let's use a simpler approach: Assign onclick directly.
+            headerVisible.onclick = (e) => {
+                e.stopPropagation();
+                this.toggleLayer(firstLayer.name);
+            };
         }
     }
 
