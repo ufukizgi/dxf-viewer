@@ -141,6 +141,37 @@ export class MeasurementManager {
         }
     }
 
+    getMeasurementState() {
+        // Export state for Tab Switching
+        // We keep the visual objects in memory attached to the state array
+        // We just need to detach them from the scene group
+        // But since we clear the group on restore, we don't need to explicitly detach here if we are about to switch.
+        // The caller will call restoreMeasurementState([]) on the active manager (clearing it) 
+        // OR the manager is shared. 
+        // In this app, MeasurementManager is SHARED. 
+        // So we clear group.
+        return [...this.measurements];
+    }
+
+    restoreMeasurementState(state) {
+        // Clear current active measurements from scene
+        while (this.group.children.length > 0) {
+            this.group.remove(this.group.children[0]);
+        }
+        this.measurements = [];
+        this.activeTool = null;
+        this.points = [];
+        this.clearTemp();
+
+        // Load new state
+        if (state && Array.isArray(state)) {
+            state.forEach(m => {
+                this.measurements.push(m);
+                if (m.visual) this.group.add(m.visual);
+            });
+        }
+    }
+
     handleMouseMove(pointerNDC, rayOrigin, rayDir) {
         // Handled by updatePreview called explicitly from main
     }
@@ -155,10 +186,21 @@ export class MeasurementManager {
                     const type = hitObject.userData.type;
                     if (type === 'CIRCLE' || type === 'ARC') {
                         const entity = hitObject.userData.entity || hitObject.userData;
+
+                        // Detect Scale
+                        let scale = 1.0;
+                        if (hitObject.userData.placementScale) scale = hitObject.userData.placementScale;
+                        else if (hitObject.userData.templateScale) scale = hitObject.userData.templateScale;
+                        else if (hitObject.parent && hitObject.parent.userData.placementScale) scale = hitObject.parent.userData.placementScale;
+                        else if (hitObject.scale && hitObject.scale.x !== 1) scale = hitObject.scale.x;
+
                         const center = new THREE.Vector3(entity.center.x, entity.center.y, 0);
+                        // Apply World Matrix to correctly locate the center in World Coordinate Space
+                        center.applyMatrix4(hitObject.matrixWorld);
+
                         this.currentRadiusEntity = {
                             center: center,
-                            radius: entity.radius,
+                            radius: entity.radius * scale,
                             type: type
                         };
                         this.points.push(center); // P0
@@ -266,9 +308,12 @@ export class MeasurementManager {
                 const l1 = this.lineSelection[0], l2 = this.lineSelection[1];
                 const getLinePts = (line) => {
                     const pos = line.geometry.attributes.position;
-                    // Fix: Handle BufferGeometry safely
-                    const getVec = (idx) => new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
-                    return [getVec(0), getVec(1)];
+                    // Fix: Handle BufferGeometry safely and Apply World Matrix
+                    const p1 = new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0));
+                    const p2 = new THREE.Vector3(pos.getX(1), pos.getY(1), pos.getZ(1));
+                    p1.applyMatrix4(line.matrixWorld);
+                    p2.applyMatrix4(line.matrixWorld);
+                    return [p1, p2];
                 };
                 const [l1s, l1e] = getLinePts(l1);
                 const [l2s, l2e] = getLinePts(l2);

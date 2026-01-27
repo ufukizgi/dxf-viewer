@@ -197,6 +197,10 @@ export class TabManager {
             if (this.viewer.controls) {
                 currentTab.cameraState.target.copy(this.viewer.controls.target);
             }
+            // Save Measurements
+            if (this.app.measurementManager) {
+                currentTab.measurementState = this.app.measurementManager.getMeasurementState();
+            }
         }
 
         // Set New Active ID
@@ -213,6 +217,11 @@ export class TabManager {
         // 2. Set new group
         this.viewer.dxfGroup = newTab.dxfGroup;
         this.viewer.scene.add(this.viewer.dxfGroup);
+
+        // Restore Measurements
+        if (this.app.measurementManager) {
+            this.app.measurementManager.restoreMeasurementState(newTab.measurementState || []);
+        }
 
         // 3. Restore Camera
         this.viewer.camera.position.copy(newTab.cameraState.position);

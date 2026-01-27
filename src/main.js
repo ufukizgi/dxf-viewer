@@ -84,6 +84,9 @@ class DXFViewerApp {
         // Initialize Events first
         this.setupUIEvents();
 
+        // Add viewport-canvas class for crosshair cursor
+        this.canvas.classList.add('viewport-canvas');
+
         // Initialize Tab Manager last, as it may trigger clearing selection which relies on other managers
         try {
             this.tabManager.init(); // Creates initial empty tab
@@ -97,12 +100,13 @@ class DXFViewerApp {
         const urlParams = new URLSearchParams(window.location.search);
         const fileUrl = urlParams.get('file');
 
+        // Capture 'yudano' param for WeightManager
+        const yudaNo = urlParams.get('yudano');
+        if (yudaNo && this.weightManager) {
+            this.weightManager.yudaNo = yudaNo;
+        }
+
         if (fileUrl) {
-            // Hide file upload button when file is loaded via URL parameter
-            const fileUploadContainer = document.querySelector('.file-upload-container');
-            if (fileUploadContainer) {
-                fileUploadContainer.style.display = 'none';
-            }
             this.loadUrl(fileUrl);
         }
     }
@@ -119,6 +123,10 @@ class DXFViewerApp {
     }
 
     // ...
+    onWheel(e) {
+        e.preventDefault();
+    }
+
     setupUIEvents() {
         // Canvas Mouse Events
         this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));

@@ -53,12 +53,15 @@ export class WeightManager {
 
         // Info Table Template
         this.infoTableTemplate =
-            `+--------------+----------+----------------+----------+------------------+----------+
+            `| ÖLÇEK        | %val-scale%        |
++--------------+----------+----------------+----------+------------------+----------+
 | YUDA-NO      | %val-yudano%       | MALZEME        | %val-metarial%   | TEMPER          | %val-temper%         |
 +--------------+----------+----------------+----------+------------------+----------+
 | DU (mm)      | %val-diameter%     | ALAN (mm²)     | %val-area%       | GRAMAJ (kg/m)   | %val-veigth%         |
 +--------------+----------+----------------+----------+------------------+----------+
 | ŞEK. FAKTÖRÜ | %val-shapefactor%  | DIŞ ÇEVRE (mm) | %val-perimeter%  | TOP. ÇEVRE (mm) | %val-totalperimeter% |
++--------------+----------+----------------+----------+------------------+----------+
+| EKST. OR.    | %val-extratio%     | PRES           | %val-pres%       | FIGUR           | %val-figur%          |
 +--------------+----------+----------------+----------+------------------+----------+`;
     }
 
@@ -464,6 +467,9 @@ export class WeightManager {
         if (this.panel) this.panel.classList.add('hidden');
         if (this.scalePanel) this.scalePanel.classList.remove('hidden');
 
+        // Initial table generation
+        this.updateDynamicTable();
+
         this.startMouseFollowing();
         this.updateScaleDisplay();
 
@@ -649,6 +655,12 @@ export class WeightManager {
         if (this.floatingGroup) {
             this.floatingGroup.scale.set(this.templateScale, this.templateScale, 1);
             this.floatingGroup.rotation.z = this.templateRotation;
+
+            // Counter-rotate Info Table to keep it upright
+            const table = this.floatingGroup.children.find(c => c.userData.isInfoTable);
+            if (table) {
+                table.rotation.z = -this.templateRotation;
+            }
         }
     }
 
@@ -692,6 +704,9 @@ export class WeightManager {
                 rotationEl.value = degrees.toFixed(2);
             }
         }
+
+        // Update dynamic table with new scale
+        this.updateDynamicTable();
     }
 
     placeFloatingGeometries(event) {
@@ -720,52 +735,21 @@ export class WeightManager {
             resolved: statsToUse
         });
 
-        // 1. Calculate Info Table Position (Before Merge logic destroys floatingGroup structure)
-        let tablePosition = null;
-        if (statsToUse) {
-            try {
-                const box = new THREE.Box3().setFromObject(this.floatingGroup);
-                tablePosition = new THREE.Vector3(
-                    (box.min.x + box.max.x) / 2,
-                    box.min.y,
-                    0
-                );
-                // Add margin
-                tablePosition.y -= (10 * scale);
-            } catch (e) {
-                console.warn('[WeightManager] Failed to calculate box for table:', e);
-            }
-        }
+        console.log('[WeightManager] Resolving stats for table:', {
+            pending: this.pendingPlacementStats,
+            last: this.lastCalculatedStats,
+            resolved: statsToUse
+        });
+
 
         // 2. Merge floating entities into dxfGroup
         this.mergeFloatingIntoDxfGroup(position, scale);
 
-        // 3. Update Scale Values
-        // 3. Update Scale Values
-        this.calculatedValues['val-scale'] = scale >= 1 ?
-            `${scale.toFixed(1)}:1` :
-            `1:${(1 / scale).toFixed(1)}`;
-
-        // 5. Generate Info Table
-        if (statsToUse && tablePosition) {
-            // Update scale in stats
+        // Update Stats State
+        if (statsToUse) {
             statsToUse.numericScale = scale;
-
-            // Generate Table
-            console.log('[WeightManager] Generating info table at:', tablePosition);
-            const tableMesh = this.createTableMesh(statsToUse, tablePosition, scale);
-            if (tableMesh) {
-                this.viewer.dxfGroup.add(tableMesh);
-                console.log('[WeightManager] Info table added to dxfGroup successfully');
-            } else {
-                console.warn('[WeightManager] Info table mesh creation returned null');
-            }
-
-            // Set as last calculated
             this.lastCalculatedStats = statsToUse;
         } else {
-            console.log('[WeightManager] Skipping table generation (no stats or position)');
-            // Just update scale in generic state if needed
             if (!this.lastCalculatedStats) {
                 this.lastCalculatedStats = { numericScale: scale };
             } else {
@@ -890,16 +874,65 @@ export class WeightManager {
         console.log(`[WeightManager] Merged ${children.length} entities into dxfGroup`);
     }
 
+    updateDynamicTable() {
+        if (!this.pendingPlacementStats || !this.floatingGroup) return;
+
+        // Remove existing table
+        const existing = this.floatingGroup.children.find(c => c.userData.isInfoTable);
+        if (existing) {
+            if (existing.material.map) existing.material.map.dispose();
+            if (existing.material) existing.material.dispose();
+            if (existing.geometry) existing.geometry.dispose();
+            this.floatingGroup.remove(existing);
+        }
+
+        // Calculate Position (Bottom of floating geometries)
+        const localBox = new THREE.Box3();
+        let hasGeometry = false;
+
+        this.floatingGroup.children.forEach(c => {
+            if (c.geometry && !c.userData.isInfoTable) {
+                if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+                const geomBox = c.geometry.boundingBox.clone();
+                c.updateMatrix();
+                geomBox.applyMatrix4(c.matrix);
+                localBox.union(geomBox);
+                hasGeometry = true;
+            }
+        });
+
+        if (!hasGeometry) return;
+
+        const tablePosition = new THREE.Vector3(
+            (localBox.min.x + localBox.max.x) / 2,
+            localBox.min.y - 10,
+            0
+        );
+
+        // Update stats scale
+        this.pendingPlacementStats.numericScale = this.templateScale;
+
+        // Generate Table (Scale 1.0 relative to group)
+        const tableMesh = this.createTableMesh(this.pendingPlacementStats, tablePosition, 1.0);
+        if (tableMesh) {
+            tableMesh.userData.isInfoTable = true;
+            // Apply counter-rotation immediately
+            tableMesh.rotation.z = -this.templateRotation;
+            this.floatingGroup.add(tableMesh);
+        }
+    }
+
     createTableMesh(stats, position, scale) {
         if (!stats) return null;
 
         // 1. Prepare Data
         const material = MATERIALS.find(m => m.id === this.currentMaterialId) || MATERIALS[0];
         const temper = TEMPERS.find(t => t.id === this.currentTemperId) || { name: '-' };
+        const pres = PRES.find(p => p.id === this.currentPresId) || { name: (this.currentPresId || '-') };
 
         // Raw values map
         const values = {
-            'val-yudano': ' - ',
+            'val-yudano': this.yudaNo || ' - ',
             'val-metarial': material.name,
             'val-temper': temper.name,
             'val-diameter': (stats.diameter || 0).toFixed(2),
@@ -907,7 +940,11 @@ export class WeightManager {
             'val-veigth': (stats.weight || 0).toFixed(3),
             'val-shapefactor': (stats.shapeFactor || 0).toFixed(2),
             'val-perimeter': (stats.outerPerimeter || 0).toFixed(2),
-            'val-totalperimeter': (stats.totalPerimeter || 0).toFixed(2)
+            'val-totalperimeter': (stats.totalPerimeter || 0).toFixed(2),
+            'val-scale': (stats.numericScale ? Number(stats.numericScale).toFixed(2) : (scale || 1).toString()),
+            'val-extratio': (stats.extrusionRatio || 0).toFixed(2),
+            'val-pres': pres.name,
+            'val-figur': this.currentFigur || 1
         };
 
         // 2. Align Table Text
@@ -1119,9 +1156,6 @@ export class WeightManager {
         canvas.addEventListener('click', this.printClick);
         canvas.addEventListener('mousemove', this.printMouseMove);
         document.addEventListener('keydown', this.printKeyDown);
-
-        // Change cursor
-        canvas.style.cursor = 'crosshair';
     }
 
     showPrintInstruction() {
@@ -1203,6 +1237,8 @@ export class WeightManager {
         }
 
         // Second click - set end point and capture
+        const x1 = Math.min(this.printSelectionStart.screenX, screenX);
+        const y1 = Math.min(this.printSelectionStart.screenY, screenY);
 
         const x2 = Math.max(this.printSelectionStart.screenX, screenX);
         const y2 = Math.max(this.printSelectionStart.screenY, screenY);
@@ -1501,9 +1537,6 @@ export class WeightManager {
         if (this.printClick) canvas.removeEventListener('click', this.printClick);
         if (this.printMouseMove) canvas.removeEventListener('mousemove', this.printMouseMove);
         if (this.printKeyDown) document.removeEventListener('keydown', this.printKeyDown);
-
-        // Reset cursor
-        canvas.style.cursor = 'default';
 
         // Hide selection box
         if (this.printSelectionBox) {
