@@ -19,17 +19,19 @@ export class ClipboardManager {
         this.renderSidebar();
 
         // Add toggle button listener if it exists
-        const toggleBtn = document.getElementById('clipboard-toggle-btn');
-        if (toggleBtn) {
-            toggleBtn.addEventListener('click', () => {
-                this.sidebar.classList.toggle('translate-x-full');
+        this.toggleBtn = document.getElementById('clipboard-toggle-btn');
+        if (this.toggleBtn) {
+            this.toggleBtn.addEventListener('click', () => {
+                this.sidebar.classList.remove('collapsed');
+                this.toggleBtn.classList.add('hidden');
             });
         }
 
         const closeBtn = document.getElementById('clipboard-close-btn');
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
-                this.sidebar.classList.add('translate-x-full');
+                this.sidebar.classList.add('collapsed');
+                if (this.toggleBtn) this.toggleBtn.classList.remove('hidden');
             });
         }
 
@@ -96,7 +98,8 @@ export class ClipboardManager {
 
         // Open sidebar to show result
         if (this.sidebar) {
-            this.sidebar.classList.remove('translate-x-full');
+            this.sidebar.classList.remove('collapsed');
+            if (this.toggleBtn) this.toggleBtn.classList.add('hidden');
         }
 
         return item;

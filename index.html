@@ -33,9 +33,6 @@
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"
                                 stroke-width="2" />
                         </svg>
-                        <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                        </svg>
                     </button>
                     <!-- Open File Dropdown -->
                     <div id="file-dropdown"
@@ -294,29 +291,18 @@
 
 
 
-                <button class="icon-btn tool-btn" id="clipboard-toggle-btn" title="Clipboard"
-                    data-i18n-title="clipboard">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
-                        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
-                    </svg>
-                </button>
+
 
                 <div id="language-selector-container" class="relative"></div>
             </div>
         </header>
 
-        <!-- Tab Bar -->
-        <div id="tab-bar" class="tab-bar">
-            <!-- Tabs will be injected here -->
-        </div>
-
         <!-- Main Content -->
         <div class="main-content">
-            <!-- Sidebar -->
+            <!-- Left Sidebar -->
             <aside class="sidebar" id="sidebar">
                 <div class="sidebar-header flex justify-between items-center mb-4 px-1">
-                    <h3 class="text-sm font-semibold text-white">Sidebar</h3>
+                    <h3 class="text-sm font-semibold text-white" data-i18n="sidebarTitle">Sidebar</h3>
                     <button id="sidebar-close-btn"
                         class="p-1 rounded-md hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
                         title="Close Sidebar" data-i18n-title="closeSidebar">
@@ -562,8 +548,141 @@
                 </div>
             </aside>
 
+            <!-- Center Column: Tab Bar + Viewport -->
+            <div id="center-column" class="flex flex-col flex-1 relative min-w-0">
+                <!-- Tab Bar Container -->
+                <div id="tab-bar-container" class="tab-bar">
+                    <!-- Left Sidebar Toggle -->
+                    <button id="sidebar-toggle-btn" class="icon-btn tab-bar-btn hidden" title="Show Sidebar"
+                        data-i18n-title="showSidebar">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M4 6h16M4 12h16m-7 6h7" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" />
+                        </svg>
+                    </button>
+
+                    <!-- Tabs Scroll Container -->
+                    <div id="tab-list" class="flex-1 flex items-center overflow-x-auto gap-1 px-1 no-scrollbar">
+                        <!-- Tabs will be injected here -->
+                    </div>
+
+                    <!-- Clipboard Toggle -->
+                    <button id="clipboard-toggle-btn" class="icon-btn tab-bar-btn" title="Show Clipboard"
+                        data-i18n-title="showClipboard">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"
+                                stroke-width="2"></path>
+                            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" stroke-width="2"></rect>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Viewport -->
+                <main class="viewport-container flex-1 relative" id="viewport-container">
+                    <canvas id="viewport" class="viewport-canvas"></canvas>
+                    <div class="overlay-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M3 3h18v18H3z M3 9h18 M9 3v18" stroke-width="2" />
+                        </svg>
+                        <h1 data-i18n="appTitle">DXF Viewer</h1>
+                    </div>
+                    <div class="viewport-overlay" id="viewport-overlay">
+                        <div class="help-text">
+                            <p data-i18n="helpPan">🖱️ <strong>Pan:</strong> Click and drag</p>
+                            <p data-i18n="helpZoom">🔍 <strong>Zoom:</strong> Mouse wheel</p>
+                            <p data-i18n="helpLoad">📁 <strong>Load:</strong> Click "Open DXF File" above</p>
+                            <p data-i18n="helpLoad">📁 <strong>Load:</strong> Click "Open DXF File" above</p>
+                        </div>
+                    </div>
+                    <!-- Start Page (Welcome Screen) -->
+                    <div id="start-page"
+                        class="absolute inset-0 bg-gray-900 z-10 flex items-center justify-center hidden">
+                        <div class="max-w-4xl w-full px-6 flex flex-col items-center">
+                            <div class="mb-12 text-center">
+                                <div class="flex items-center justify-center gap-4 mb-4">
+                                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" class="text-cyan-400"
+                                        stroke="currentColor" stroke-width="1.5">
+                                        <path d="M3 3h18v18H3z M3 9h18 M9 3v18" />
+                                    </svg>
+                                    <h1 class="text-5xl font-bold text-white tracking-tight">DXF Viewer</h1>
+                                </div>
+                                <p class="text-gray-400 text-lg" data-i18n="appSubtitle">Professional CAD functionality
+                                    in
+                                    your browser</p>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+                                <!-- New File Card -->
+                                <button id="start-new-file"
+                                    class="group relative p-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-cyan-500/50 hover:shadow-2xl hover:shadow-cyan-500/10 transition-all duration-300 flex flex-col items-center gap-4 text-center">
+                                    <div
+                                        class="w-16 h-16 rounded-full bg-cyan-500/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                        <svg class="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xl font-semibold text-white mb-2" data-i18n="newFile">New File
+                                        </h3>
+                                        <p class="text-sm text-gray-400" data-i18n="newFileDesc">Create a clean, empty
+                                            workspace</p>
+                                    </div>
+                                </button>
+
+                                <!-- Upload File Card -->
+                                <label for="file-input"
+                                    class="cursor-pointer group relative p-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-yellow-500/50 hover:shadow-2xl hover:shadow-yellow-500/10 transition-all duration-300 flex flex-col items-center gap-4 text-center">
+                                    <div
+                                        class="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                        <svg class="w-8 h-8 text-yellow-400" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xl font-semibold text-white mb-2" data-i18n="uploadFile">Open
+                                            File
+                                        </h3>
+                                        <p class="text-sm text-gray-400" data-i18n="uploadFileDesc">Open local DXF or
+                                            DWG
+                                            files</p>
+                                    </div>
+                                </label>
+
+                                <!-- Templates Card -->
+                                <button id="start-templates"
+                                    class="group relative p-8 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-purple-500/50 hover:shadow-2xl hover:shadow-purple-500/10 transition-all duration-300 flex flex-col items-center gap-4 text-center">
+                                    <div
+                                        class="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                        <svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor"
+                                            viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-xl font-semibold text-white mb-2" data-i18n="templates">
+                                            Templates
+                                        </h3>
+                                        <p class="text-sm text-gray-400" data-i18n="templatesDesc">Start from a
+                                            pre-defined
+                                            template</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Selection Box -->
+                    <div id="selection-box" class="selection-box hidden"></div>
+                </main>
+            </div>
+
             <!-- Clipboard Sidebar (Right) -->
-            <aside class="clipboard-sidebar translate-x-full" id="clipboard-sidebar">
+            <aside class="clipboard-sidebar collapsed" id="clipboard-sidebar">
                 <div class="sidebar-header flex justify-between items-center mb-4 px-1">
                     <h3 class="text-sm font-semibold text-white">Clipboard</h3>
                     <button id="clipboard-close-btn"
@@ -583,7 +702,7 @@
                                 stroke-width="2" />
                             <rect x="8" y="2" width="8" height="4" rx="1" ry="1" stroke-width="2" />
                         </svg>
-                        <h3 data-i18n="clipboard">Kopyalananlar</h3>
+                        <h3 data-i18n="clipboardTitle">Pano</h3>
                     </div>
                     <div class="panel-content flex-1 overflow-y-auto p-2" id="clipboard-list">
                         <!-- Items will be injected here -->
@@ -597,35 +716,6 @@
                     </div>
                 </div>
             </aside>
-
-            <!-- Viewport -->
-            <main class="viewport-container" id="viewport-container">
-                <button id="sidebar-floating-toggle"
-                    class="absolute top-4 left-4 z-50 p-2 rounded-lg bg-gray-900/90 border border-white/10 text-white shadow-lg hover:bg-gray-800 transition-all hidden"
-                    title="Show Sidebar" data-i18n-title="showSidebar">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M4 6h16M4 12h16m-7 6h7" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round" />
-                    </svg>
-                </button>
-                <canvas id="viewport" class="viewport-canvas"></canvas>
-                <div class="overlay-logo">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M3 3h18v18H3z M3 9h18 M9 3v18" stroke-width="2" />
-                    </svg>
-                    <h1 data-i18n="appTitle">DXF Viewer</h1>
-                </div>
-                <div class="viewport-overlay" id="viewport-overlay">
-                    <div class="help-text">
-                        <p data-i18n="helpPan">🖱️ <strong>Pan:</strong> Click and drag</p>
-                        <p data-i18n="helpZoom">🔍 <strong>Zoom:</strong> Mouse wheel</p>
-                        <p data-i18n="helpLoad">📁 <strong>Load:</strong> Click "Open DXF File" above</p>
-                        <p data-i18n="helpLoad">📁 <strong>Load:</strong> Click "Open DXF File" above</p>
-                    </div>
-                </div>
-                <!-- Selection Box -->
-                <div id="selection-box" class="selection-box hidden"></div>
-            </main>
         </div>
 
         <!-- Footer with OSNAP Dropdown -->

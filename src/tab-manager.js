@@ -9,16 +9,107 @@ export class TabManager {
         this.activeTabId = null;
         this.tabCounter = 0;
 
-        this.tabBar = document.getElementById('tab-bar');
+        this.tabBar = document.getElementById('tab-list'); // Inner scroll container
+        this.tabBarContainer = document.getElementById('tab-bar-container'); // Outer flex container
         this.viewportOverlay = document.getElementById('viewport-overlay'); // To show/hide help text
     }
 
     init() {
-        // Create initial empty tab
-        this.createNewTab("New File");
+        // Initially show Start Page instead of an empty tab
+        this.showStartPage();
+    }
+
+    showStartPage() {
+        const startPage = document.getElementById('start-page');
+        const viewportOverlay = document.getElementById('viewport-overlay');
+
+        if (startPage) {
+            startPage.classList.remove('hidden');
+        }
+
+        if (this.tabBarContainer) {
+            this.tabBarContainer.classList.add('hidden');
+        }
+
+        if (viewportOverlay) {
+            viewportOverlay.classList.add('hidden');
+        }
+
+        // Hide viewer content if any (though usually empty if we are here)
+        if (this.viewer && this.viewer.dxfGroup) {
+            this.viewer.dxfGroup.visible = false;
+        }
+
+        this.activeTabId = null;
+        this.renderTabBar();
+        this.updateUIForStartPage(true);
+
+        // Update App Status
+        if (this.app && this.app.updateStatus) {
+            this.app.updateStatus("Welcome");
+        }
+    }
+
+    hideStartPage() {
+        const startPage = document.getElementById('start-page');
+        if (startPage) {
+            startPage.classList.add('hidden');
+        }
+        if (this.tabBarContainer) {
+            this.tabBarContainer.classList.remove('hidden');
+        }
+        this.updateUIForStartPage(false);
+    }
+
+    updateUIForStartPage(isStartPage) {
+        // Toggle Sidebar state
+        const sidebar = document.getElementById('sidebar');
+        const clipboardSidebar = document.getElementById('clipboard-sidebar');
+
+        // Buttons in TabBar
+        const sidebarToggle = document.getElementById('sidebar-toggle-btn');
+        const clipboardToggle = document.getElementById('clipboard-toggle-btn');
+
+        // Close buttons in Sidebars (still exist?)
+        // sidebar-close-btn exists in sidebar
+        // clipboard-close-btn exists in clipboard-sidebar
+
+        if (isStartPage) {
+            // Collapse Sidebars check if they exist
+            if (sidebar) sidebar.classList.add('collapsed');
+            if (clipboardSidebar) clipboardSidebar.classList.add('collapsed'); // Use collapsed class
+
+            // Buttons are hidden implicitly by TabBar hiding, but ensure logic if needed
+        } else {
+            // Enter App Mode
+            // Restore Left Sidebar to Open (User Preference: usually open on file load)
+            if (sidebar) {
+                sidebar.classList.remove('collapsed');
+                // If Open, Hide Toggle Button
+                if (sidebarToggle) sidebarToggle.classList.add('hidden');
+            } else {
+                // If sidebar missing??
+                if (sidebarToggle) sidebarToggle.classList.remove('hidden');
+            }
+
+            // Keep Clipboard Closed
+            // If Closed, Show Toggle Button
+            if (clipboardSidebar) {
+                // Ensure it is collapsed? Yes, default state.
+                // If it was already open, should we close it? maybe yes for clean slate
+                // But if user was working, maybe no?
+                // TabManager.hideStartPage is called when Creating New Tab.
+                // Usually we want to reset UI slightly.
+                // Let's assume Clipboard stays closed.
+                clipboardSidebar.classList.add('collapsed');
+            }
+            if (clipboardToggle) clipboardToggle.classList.remove('hidden');
+        }
     }
 
     createNewTab(name = "New File", dxfData = null, file = null) {
+        this.hideStartPage();
+
         const id = `tab-${Date.now()}-${this.tabCounter++}`;
 
         // Create Scene Group for this tab
@@ -59,30 +150,39 @@ export class TabManager {
         const index = this.tabs.findIndex(t => t.id === id);
         if (index === -1) return;
 
-        // If closing active tab, switch to another
-        if (this.activeTabId === id) {
-            if (this.tabs.length > 1) {
-                // Switch to previous or next
-                const newIndex = index > 0 ? index - 1 : index + 1;
-                // Since we are about to remove 'index', check bounds
-                if (newIndex < this.tabs.length) {
-                    this.switchToTab(this.tabs[newIndex].id);
-                }
-            } else {
-                // Closing last tab -> Create a new empty one?
-                // Or just clear it.
-                // Let's create a new empty one to ensure app is never empty.
-                this.createNewTab();
-                // Then continue to close current
-            }
-        }
-
         // Dispose resources for this tab (meshes, materials)
         const tab = this.tabs[index];
         this.disposeGroup(tab.dxfGroup);
 
-        this.tabs.splice(index, 1);
-        this.renderTabBar();
+        // If closing active tab, switch to another
+        if (this.activeTabId === id) {
+            // Remove first
+            this.tabs.splice(index, 1);
+
+            if (this.tabs.length > 0) {
+                // Switch to previous or next
+                // If we removed at 'index', the next item is now at 'index' (unless it was the last one)
+                // If we closed the last item, pick the new last item (index-1)
+                let newIndex = index;
+                if (newIndex >= this.tabs.length) {
+                    newIndex = this.tabs.length - 1;
+                }
+                this.switchToTab(this.tabs[newIndex].id);
+            } else {
+                // No tabs left -> Show Start Page
+                this.activeTabId = null;
+                if (this.viewer && this.viewer.scene && this.viewer.dxfGroup) {
+                    this.viewer.scene.remove(this.viewer.dxfGroup);
+                    this.viewer.dxfGroup = null;
+                }
+                this.renderTabBar();
+                this.showStartPage();
+            }
+        } else {
+            // Closing inactive tab
+            this.tabs.splice(index, 1);
+            this.renderTabBar();
+        }
     }
 
     switchToTab(id) {

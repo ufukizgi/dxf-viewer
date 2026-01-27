@@ -520,6 +520,13 @@ export class WeightManager {
         // Create a vector at mouse position and unproject to world
         const vec = new THREE.Vector3(x, y, 0);
         vec.unproject(this.viewer.camera);
+        vec.z = 0;
+
+        // Use Snap Point if available (updated by Main loop)
+        if (this.snappingManager && this.snappingManager.activeSnap) {
+            vec.copy(this.snappingManager.activeSnap.point);
+            vec.z = 0;
+        }
 
         // Position floating group so its center (which is now 0,0 locally) is at cursor
         // No offset needed because we centered the geometry in the group!
@@ -801,10 +808,31 @@ export class WeightManager {
             // Use attach to preserve world transform (pos, rot, scale) while reparenting
             this.viewer.dxfGroup.attach(child);
 
+            // Ensure geometry has bounding box for Raycaster
+            if (child.geometry) {
+                child.geometry.computeBoundingBox();
+            }
+
             // Mark as placed geometry
             child.userData.isPlacedGeometry = true;
             child.userData.placementScale = scale;
             child.userData.placementRotation = this.templateRotation; // Store rotation for record
+
+            // Verify entity metadata exists for SnappingManager
+            if (!child.userData.entity) {
+                // Try to recover basic entity data if missing
+                if (child.isLine) {
+                    // Start/End from geometry
+                    if (child.geometry && child.geometry.attributes.position) {
+                        const pos = child.geometry.attributes.position;
+                        child.userData.entity = {
+                            type: 'LINE',
+                            startPoint: { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) },
+                            endPoint: { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) }
+                        };
+                    }
+                }
+            }
 
             addedObjects.push(child);
         }
@@ -1126,21 +1154,22 @@ export class WeightManager {
 
     getSnapOrScreenPoint(e) {
         const rect = this.viewer.renderer.domElement.getBoundingClientRect();
+        // Default to mouse coordinates relative to canvas
+        const screenX = e.clientX - rect.left;
+        const screenY = e.clientY - rect.top;
 
-        // Default: Mouse position relative to canvas
-        let screenX = e.clientX - rect.left;
-        let screenY = e.clientY - rect.top;
-
-        // Check for active snap
         if (this.snappingManager && this.snappingManager.activeSnap) {
-            const snapPoint = this.snappingManager.activeSnap.point;
+            // Project world snap point to screen space
+            const worldSnap = this.snappingManager.activeSnap.point.clone();
+            worldSnap.z = 0; // Ensure Z is 0
 
-            // Project 3D snap point to 2D screen coordinates
-            const vector = snapPoint.clone();
-            vector.project(this.viewer.camera);
+            // For Ortho camera, projection gives NDC (-1..1)
+            const ndc = worldSnap.project(this.viewer.camera);
 
-            screenX = (vector.x * .5 + .5) * rect.width;
-            screenY = (-(vector.y * .5) + .5) * rect.height;
+            const snapScreenX = (ndc.x + 1) * rect.width / 2;
+            const snapScreenY = (-ndc.y + 1) * rect.height / 2;
+
+            return { x: snapScreenX, y: snapScreenY };
         }
 
         return { x: screenX, y: screenY };
@@ -1149,14 +1178,11 @@ export class WeightManager {
     onPrintSelectionStart(e) {
         if (!this.printMode) return;
 
-        // Get coordinates (snapped if available)
         const point = this.getSnapOrScreenPoint(e);
         const screenX = point.x;
         const screenY = point.y;
 
         const rect = this.viewer.renderer.domElement.getBoundingClientRect();
-
-
 
         // First click - set start point
         if (!this.printSelectionStart) {
@@ -1177,8 +1203,7 @@ export class WeightManager {
         }
 
         // Second click - set end point and capture
-        const x1 = Math.min(this.printSelectionStart.screenX, screenX);
-        const y1 = Math.min(this.printSelectionStart.screenY, screenY);
+
         const x2 = Math.max(this.printSelectionStart.screenX, screenX);
         const y2 = Math.max(this.printSelectionStart.screenY, screenY);
 

@@ -148,11 +148,46 @@ body {
     align-items: center;
     background: var(--bg-tertiary);
     height: 36px;
-    padding: 0 8px;
+    padding: 0 4px;
     gap: 4px;
     border-bottom: 1px solid var(--border-color);
-    overflow-x: auto;
+    overflow: hidden;
+    /* Container doesn't scroll, inner does */
     flex-shrink: 0;
+}
+
+.tab-bar-btn {
+    width: 28px;
+    height: 28px;
+    padding: 4px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    min-width: unset;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.tab-bar-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-bar-btn.hidden {
+    display: none;
+}
+
+/* No Scrollbar Utility */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
 }
 
 .tab-item {
@@ -169,7 +204,8 @@ body {
     border: 1px solid transparent;
     transition: all var(--transition-fast);
     min-width: 100px;
-    max-width: 200px;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .tab-item:hover {
@@ -272,24 +308,25 @@ body {
     background: var(--bg-glass);
     backdrop-filter: blur(10px);
     border-right: 1px solid var(--border-color);
-    overflow-y: auto;
+    overflow: hidden;
+    /* Hide content when shrinking */
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
     padding: var(--spacing-md);
-    transition: transform var(--transition-normal);
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 50;
-    transform: translateX(0);
-    /* Default visible */
+    transition: width var(--transition-normal), padding var(--transition-normal), border var(--transition-normal);
+    position: relative;
+    /* Relative for Flow */
+    flex-shrink: 0;
+    z-index: 20;
+    /* Removed absolute/transform */
 }
 
 .sidebar.collapsed {
-    transform: translateX(-100%);
-    margin-left: 0;
+    width: 0;
+    padding: 0;
+    border-right: none;
+    /* Removed transform */
 }
 
 /* Floating Toggle Button */
@@ -995,21 +1032,24 @@ select option {
     background: var(--bg-glass);
     backdrop-filter: blur(10px);
     border-left: 1px solid var(--border-color);
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     padding: var(--spacing-md);
-    transition: transform var(--transition-normal);
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 50;
-    /* translate-x-full class handles hiding */
-    transform: translateX(0);
+    transition: width var(--transition-normal), padding var(--transition-normal), border var(--transition-normal);
+    position: relative;
+    /* Relative for Flow */
+    flex-shrink: 0;
+    z-index: 20;
+    /* Removed absolute/transform */
 }
 
-.clipboard-sidebar.translate-x-full {
-    transform: translateX(100%);
+.clipboard-sidebar.translate-x-full,
+.clipboard-sidebar.collapsed {
+    width: 0;
+    padding: 0;
+    border-left: none;
+    /* Removed transform */
 }
 
 .clipboard-item {

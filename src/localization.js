@@ -15,6 +15,12 @@ export const translations = {
         "loadingDXF": "DXF dosyası yükleniyor...",
         "errorLoading": "DXF yüklenirken hata: ",
         "loadedInfo": "{count} varlık, {layers} katman yüklendi",
+        "appSubtitle": "Ekstrüzyon için özelleştirilmiş, açık kaynak 2D CAD Görüntüleyici",
+        "newFileDesc": "Boş bir dosya oluştur",
+        "uploadFileDesc": "DWG/DXF dosyasını yükleyin",
+        "sidebarTitle": "Özellikler",
+        "clipboardTitle": "Pano",
+        "templatesDesc": "Şablon dosyasını yükleyin",
 
         // Tools
         "measureDistance": "Mesafe Ölç",
@@ -173,7 +179,12 @@ export const translations = {
         "loadingDXF": "Loading DXF file...",
         "errorLoading": "Error loading DXF: ",
         "loadedInfo": "Loaded {count} entities, {layers} layers",
-
+        "appSubtitle": "Extrusion-optimized, open-source 2D CAD Viewer",
+        "newFileDesc": "Create an empty file",
+        "uploadFileDesc": "Upload a DWG/DXF file",
+        "sidebarTitle": "Properties",
+        "clipboardTitle": "Clipboard",
+        "templatesDesc": "Upload a template file",
         // Tools
         "measureDistance": "Measure Distance",
         "measureAngle": "Measure Angle",

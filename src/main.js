@@ -81,10 +81,17 @@ class DXFViewerApp {
 
         this.clipboardManager = new ClipboardManager(this.viewer, this.weightManager, this.languageManager);
 
-        // Initialize Tab Manager last, as it may trigger clearing selection which relies on other managers
-        this.tabManager.init(); // Creates initial empty tab
-
+        // Initialize Events first
         this.setupUIEvents();
+
+        // Initialize Tab Manager last, as it may trigger clearing selection which relies on other managers
+        try {
+            this.tabManager.init(); // Creates initial empty tab
+        } catch (error) {
+            console.error("TabManager initialization failed:", error);
+            this.updateStatus("Error initializing tabs");
+        }
+
         this.updateStatus(this.languageManager.translate('ready'));
 
         const urlParams = new URLSearchParams(window.location.search);
@@ -105,9 +112,24 @@ class DXFViewerApp {
         if (statusBar) statusBar.textContent = msg;
     }
 
+    onWindowResize() {
+        if (this.viewer) {
+            this.viewer.resize();
+        }
+    }
+
     // ...
     setupUIEvents() {
-        // ... (mouse events)
+        // Canvas Mouse Events
+        this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
+        this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
+        this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Global Events
+        window.addEventListener('resize', () => this.onWindowResize());
+        document.addEventListener('keydown', (e) => this.onKeyDown(e));
 
         // Dropdown Logic for Open File
         const openFileBtn = document.getElementById('open-file-btn');
@@ -139,24 +161,23 @@ class DXFViewerApp {
         const menuTemplates = document.getElementById('menu-templates');
         if (menuTemplates) {
             menuTemplates.addEventListener('click', () => {
-                // For now, maybe trigger the template popup from WeightManager?
-                // Or we should separate Template selection logic.
-                // The user said "Templates > Templates klasöründeki templateler listelenir".
-                // This implies a submenu or a popup list. 
-                // Since WeightManager has a robust template loader, we might leverage it or request it to open template popup.
-                // But WeightManager's template popup adds to EXISTING scene.
-                // User wants "Open File > Templates" which presumably implies opening AS NEW FILE.
-
-                // Let's reuse WeightManager's popup but change its behavior context?
-                // Or built a simpler cleaner list here.
-                // Let's ask WeightManager to open its popup, but we intercept the result?
-                // Simpler: Just open the same popup, but handling the selection might need coordination.
-
-                // Accessing weightManager.openTemplatePopup() 
-                // We need to modify WeightManager to handle "Open as New" vs "Add to Scene".
-
                 this.weightManager.openTemplateSelectorForNewTab();
                 fileDropdown?.classList.add('hidden');
+            });
+        }
+
+        // Start Page Events
+        const startNewFile = document.getElementById('start-new-file');
+        if (startNewFile) {
+            startNewFile.addEventListener('click', () => {
+                this.tabManager.createNewTab("New File");
+            });
+        }
+
+        const startTemplates = document.getElementById('start-templates');
+        if (startTemplates) {
+            startTemplates.addEventListener('click', () => {
+                this.weightManager.openTemplateSelectorForNewTab();
             });
         }
 
@@ -234,7 +255,6 @@ class DXFViewerApp {
                 this.viewer.setBackgroundColor(e.target.value);
             });
         }
-
         // Measurement Tools - Top Bar (Unwrapped)
         const toolIds = [
             'tool-distance', 'tool-angle', 'tool-radius',
@@ -339,19 +359,20 @@ class DXFViewerApp {
 
 
         // Sidebar controls
+        // Sidebar controls
         const sidebarCloseBtn = document.getElementById('sidebar-close-btn');
-        const sidebarFloatingToggle = document.getElementById('sidebar-floating-toggle');
+        const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
         const sidebar = document.getElementById('sidebar');
 
-        if (sidebarCloseBtn && sidebar && sidebarFloatingToggle) {
+        if (sidebarCloseBtn && sidebar && sidebarToggleBtn) {
             sidebarCloseBtn.addEventListener('click', () => {
-                sidebar.classList.add('hidden');
-                sidebarFloatingToggle.classList.remove('hidden');
+                sidebar.classList.add('collapsed');
+                sidebarToggleBtn.classList.remove('hidden');
             });
 
-            sidebarFloatingToggle.addEventListener('click', () => {
-                sidebar.classList.remove('hidden');
-                sidebarFloatingToggle.classList.add('hidden');
+            sidebarToggleBtn.addEventListener('click', () => {
+                sidebar.classList.remove('collapsed');
+                sidebarToggleBtn.classList.add('hidden');
             });
         }
 
@@ -545,15 +566,22 @@ class DXFViewerApp {
         if (!this.selectionState.isDragging) {
             let currentPoint = null;
             if (this.snappingManager) {
-                // OSNAP only active in Linear Measurement Mode
-                if (this.measurementManager && this.measurementManager.activeTool === 'distance') {
+                // OSNAP Active Conditions:
+                // 1. Linear Measurement Mode
+                // 2. Template Placement Mode (Paste)
+                // 3. Print Area Selection Mode
+                const isMeasureMode = this.measurementManager && this.measurementManager.activeTool === 'distance';
+                const isTemplateMode = this.weightManager && this.weightManager.templateMode;
+                const isPrintMode = this.weightManager && this.weightManager.printMode;
+
+                if (isMeasureMode || isTemplateMode || isPrintMode) {
                     const snap = this.snappingManager.findSnapPoint({ x, y });
                     if (snap) {
                         this.updateStatus('Snapped: ' + snap.type);
                         currentPoint = snap.point;
                     }
                 } else {
-                    // Force clear if not in distance mode (just to be safe)
+                    // Force clear if not in active mode
                     this.snappingManager.clearMarker();
                 }
 
@@ -625,6 +653,8 @@ class DXFViewerApp {
         } else {
             this.onClick(e);
         }
+
+        this.selectionState.isDragging = false;
     }
 
     updateSelectionBox(curX, curY) {
@@ -1021,7 +1051,13 @@ class DXFViewerApp {
         // If not forced, check if current tab is "New File" (empty).
 
         const currentTab = this.tabManager.getActiveTab();
-        const isEmpty = currentTab.dxfGroup.children.length === 0 && currentTab.name === "New File";
+
+        // If no active tab (Start Page), force new tab
+        if (!currentTab) {
+            forceNewTab = true;
+        }
+
+        const isEmpty = currentTab && currentTab.dxfGroup.children.length === 0 && currentTab.name === "New File";
 
         if (forceNewTab || !isEmpty) {
             // Create new tab and switch to it
