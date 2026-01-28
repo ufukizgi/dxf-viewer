@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import { MATERIALS, TEMPERS, DEFAULT_MATERIAL_ID, PRES } from './materials.js';
 
 export class WeightManager {
-    constructor(viewer, languageManager, snappingManager, onCloseCallback, onChainSelectCallback) {
-        this.viewer = viewer;
+    constructor(app, languageManager, snappingManager, onCloseCallback, onChainSelectCallback) {
+        this.app = app;
+        this.viewer = app.viewer || app.sceneViewer; // Handle both prop names if unsure, main.js uses sceneViewer but passed 'this'
+        if (!this.viewer) console.error('[WeightManager] Viewer not found in App instance!');
+
         this.languageManager = languageManager;
         this.snappingManager = snappingManager;
         this.onCloseCallback = onCloseCallback;
@@ -18,6 +21,7 @@ export class WeightManager {
         this.currentFigur = 1;
 
         this.selectedObjects = [];
+
         this.calculationResult = null;
         this.isEnabled = false;
 
@@ -54,15 +58,15 @@ export class WeightManager {
         // Info Table Template
         this.infoTableTemplate =
             `| ÖLÇEK        | %val-scale%        |
-+--------------+----------+----------------+----------+------------------+----------+
++--------------+-----------+----------------+----------+------------------+----------+
 | YUDA-NO      | %val-yudano%       | MALZEME        | %val-metarial%   | TEMPER          | %val-temper%         |
-+--------------+----------+----------------+----------+------------------+----------+
++--------------+-----------+----------------+----------+------------------+----------+
 | DU (mm)      | %val-diameter%     | ALAN (mm²)     | %val-area%       | GRAMAJ (kg/m)   | %val-veigth%         |
-+--------------+----------+----------------+----------+------------------+----------+
++--------------+-----------+----------------+----------+------------------+----------+
 | ŞEK. FAKTÖRÜ | %val-shapefactor%  | DIŞ ÇEVRE (mm) | %val-perimeter%  | TOP. ÇEVRE (mm) | %val-totalperimeter% |
-+--------------+----------+----------------+----------+------------------+----------+
++--------------+-----------+----------------+----------+------------------+----------+
 | EKST. OR.    | %val-extratio%     | PRES           | %val-pres%       | FIGUR           | %val-figur%          |
-+--------------+----------+----------------+----------+------------------+----------+`;
++--------------+-----------+----------------+----------+------------------+----------+`;
     }
 
     init() {
@@ -73,6 +77,10 @@ export class WeightManager {
     createUI() {
         this.panel = document.getElementById('weight-panel');
         this.btn = document.getElementById('weight-btn');
+
+        // Gap Tolerance UI
+        this.gapTolerancePanel = document.getElementById('gap-tolerance-panel');
+        this.gapToleranceInput = document.getElementById('gap-tolerance-input');
 
         // Template popup elements
         this.templatePopup = document.getElementById('template-popup');
@@ -151,6 +159,15 @@ export class WeightManager {
 
                 if (this.onChainSelectCallback && this.selectedObjects.length > 0) {
                     this.onChainSelectCallback(this.selectedObjects);
+                }
+            });
+        }
+
+        // Gap Tolerance Input
+        if (this.gapToleranceInput) {
+            this.gapToleranceInput.addEventListener('change', () => {
+                if (this.isActive && this.selectedObjects.length > 0) {
+                    this.update(this.selectedObjects);
                 }
             });
         }
@@ -243,8 +260,21 @@ export class WeightManager {
         if (this.btn) {
             if (this.isActive) {
                 this.btn.classList.add('bg-cyan-500/20', 'text-cyan-400');
+
+                // Show Gap Tolerance Panel
+                if (this.gapTolerancePanel) this.gapTolerancePanel.classList.remove('hidden');
+
+                // Auto-set tolerance based on file type
+                if (this.gapToleranceInput && this.app && this.app.tabManager) {
+                    const activeTab = this.app.tabManager.getActiveTab();
+                    const isPdf = activeTab && (activeTab.isPdfSource === true || (activeTab.name && activeTab.name.toLowerCase().endsWith('.pdf')));
+                    this.gapToleranceInput.value = isPdf ? "0.05" : "0.01";
+                }
             } else {
                 this.btn.classList.remove('bg-cyan-500/20', 'text-cyan-400');
+
+                // Hide Gap Tolerance Panel
+                if (this.gapTolerancePanel) this.gapTolerancePanel.classList.add('hidden');
             }
         }
 
@@ -1054,7 +1084,7 @@ export class WeightManager {
 
         // Create Plane
         // World Line Height calibration
-        const worldLineHeight = 5.0 * scale;
+        const worldLineHeight = 4.0 * scale;
         const aspect = canvas.width / canvas.height;
         const totalHeight = worldLineHeight * lines.length;
         const totalWidth = totalHeight * aspect;
@@ -2312,7 +2342,27 @@ export class WeightManager {
 
     // Find all disconnected closed chains from a set of objects
     findAllChains(objects) {
-        const tolerance = 0.001; // Strict tolerance for exact endpoint matching
+        // Use user-defined tolerance if available, else default to 0.01
+        let tolerance = 0.01;
+
+        if (this.gapToleranceInput) {
+            const val = parseFloat(this.gapToleranceInput.value);
+            if (!isNaN(val) && val > 0) {
+                tolerance = val;
+            }
+        } else {
+            // Fallback to auto-detection if UI missing
+            if (this.app && this.app.tabManager) {
+                const activeTab = this.app.tabManager.getActiveTab();
+                const isPdf = (activeTab && activeTab.isPdfSource === true) ||
+                    (activeTab && activeTab.name && activeTab.name.toLowerCase().endsWith('.pdf'));
+                if (isPdf) tolerance = 0.05;
+            }
+        }
+
+        console.log(`[WeightManager] findAllChains using tolerance: ${tolerance}`);
+
+
         const results = [];
 
         // Extract all segments

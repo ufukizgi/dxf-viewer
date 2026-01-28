@@ -9,8 +9,9 @@ A powerful, web-based DXF/DWG file viewer built with Three.js and Vanilla JavaSc
 ## Features
 
 ### 📂 File Management
-- **Multi-Tab Support**: Work with multiple DXF/DWG files simultaneously in separate tabs.
+- **Multi-Tab Support**: Work with multiple DXF/DWG/PDF files simultaneously in separate tabs.
 - **DWG Conversion**: Automatic conversion of DWG files to DXF format via cloud API.
+- **PDF Import**: Import vector PDF files and automatically convert them to editable vector lines.
 - **Drag & Drop**: Simply drag and drop files to open them.
 - **Template Library**: Load pre-defined templates for quick access to common shapes and components.
 - **Start Page**: Clean welcome screen with quick access to new files, templates, and file uploads.

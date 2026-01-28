@@ -164,6 +164,12 @@ export const translations = {
         "downloadConfirmTitle": "İndirmeyi Onayla",
         "downloadConfirmDesc": "Orijinal dosyanın dönüştürülmüş DXF versiyonunu indirmek üzeresiniz.",
         "downloadBtn": "İndir",
+        "gapTolerance": "Boşluk Toleransı",
+        "tolerance": "Tolerans",
+        "toleranceHint": "Kapalı alan oluşmadıysa toleransı artır.",
+        "scaleBtn": "Nesneleri Ölçekle",
+        "scaleTitle": "Nesneleri Ölçekle",
+        "scaleFactor": "Ölçek Faktörü:",
 
         // Clipboard
         "clipboard": "Pano",
@@ -329,7 +335,12 @@ export const translations = {
         "downloadConfirmTitle": "Confirm Download",
         "downloadConfirmDesc": "You are about to download the converted DXF version of the original file.",
         "downloadBtn": "Download",
-
+        "gapTolerance": "Gap Tolerance",
+        "tolerance": "Tolerance",
+        "toleranceHint": "Increase tolerance if no area detected",
+        "scaleBtn": "Scale Objects",
+        "scaleTitle": "Scale Objects",
+        "scaleFactor": "Scale Factor:",
         // Clipboard
         "clipboard": "Clipboard",
         "clipboardEmpty": "Clipboard empty",

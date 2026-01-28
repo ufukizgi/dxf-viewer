@@ -9,6 +9,7 @@ import { WeightManager } from './weight-manager.js';
 import { CommandHistory } from './command-history.js';
 import { CmdAddMeasurement, CmdDelete } from './commands.js';
 import { ClipboardManager } from './clipboard-manager.js';
+import { ScaleManager } from './scale-manager.js';
 
 
 import { TabManager } from './tab-manager.js';
@@ -67,7 +68,7 @@ class DXFViewerApp {
         );
         this.objectInfoManager = new ObjectInfoManager(this.viewer, this.measurementManager);
         this.weightManager = new WeightManager(
-            this.viewer,
+            this,
             this.languageManager,
             this.snappingManager,
             () => {
@@ -80,6 +81,9 @@ class DXFViewerApp {
         this.weightManager.init();
 
         this.clipboardManager = new ClipboardManager(this.viewer, this.weightManager, this.languageManager);
+        this.scaleManager = new ScaleManager(this.viewer, this.snappingManager, (cmd) => {
+            this.history.execute(cmd);
+        });
 
         // Initialize Events first
         this.setupUIEvents();
@@ -296,6 +300,17 @@ class DXFViewerApp {
                 });
             }
         });
+
+        // Scale Button
+        const scaleBtn = document.getElementById('scale-btn');
+        if (scaleBtn) {
+            scaleBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.scaleManager) {
+                    this.scaleManager.activate(this.selectedObjects);
+                }
+            });
+        }
 
         // Weight Button
         const weightBtn = document.getElementById('weight-btn');
@@ -530,6 +545,7 @@ class DXFViewerApp {
         this.selectedObjects = [];
         this.objectInfoManager.update(this.selectedObjects);
         this.weightManager.update(this.selectedObjects);
+        if (this.scaleManager) this.scaleManager.updateButtonState(this.selectedObjects);
         this.updateStatus(this.languageManager.translate('selectionCleared'));
     }
 
@@ -620,6 +636,13 @@ class DXFViewerApp {
             return;
         }
 
+        // Prevent selection update if Scale Picking is active
+        if (this.scaleManager && this.scaleManager.isActive && this.scaleManager.isPickingCenter) {
+            // Let ScaleManager handle the click (it has its own listener)
+            // But we need to ensure we don't clear selection below
+            return;
+        }
+
         if (!this.selectionState.active) return;
 
         this.selectionState.active = false;
@@ -653,6 +676,7 @@ class DXFViewerApp {
                 this.objectInfoManager.update(this.selectedObjects);
                 this.objectInfoManager.update(this.selectedObjects);
                 this.weightManager.update(this.selectedObjects);
+                if (this.scaleManager) this.scaleManager.updateButtonState(this.selectedObjects);
                 this.updateWeightButtonState(this.selectedObjects.length > 0);
             } else {
                 this.updateStatus('No items found in box');
@@ -1084,12 +1108,15 @@ class DXFViewerApp {
 
         if (extension === 'dwg') {
             await this.handleDwgConversion(file);
+        } else if (extension === 'pdf') {
+            await this.handlePdfConversion(file);
         } else {
             await this.processDxfFile(file);
         }
     }
 
     async handleDwgConversion(file) {
+        // ... existing code ...
         // 1. Check file size (max 20MB)
         const maxSize = 20 * 1024 * 1024; // 20 MB
         if (file.size > maxSize) {
@@ -1128,7 +1155,9 @@ class DXFViewerApp {
 
             // Update tab file reference to the converted one
             const activeTab = this.tabManager.getActiveTab();
+            console.log('[Main] PDF Conversion Success. Setting isPdfSource=true for tab:', activeTab.id);
             activeTab.file = convertedFile;
+            activeTab.isPdfSource = true;
 
             // 7. Load converted DXF
             await this.processDxfFile(convertedFile);
@@ -1139,6 +1168,59 @@ class DXFViewerApp {
             this.updateStatus('Conversion Failed');
         } finally {
             // 8. Hide Loader
+            if (loader) loader.classList.add('hidden');
+        }
+    }
+
+    async handlePdfConversion(file) {
+        // 1. Show Loader
+        const loader = document.getElementById('conversion-loader');
+        if (loader) loader.classList.remove('hidden');
+
+        this.updateStatus(this.languageManager.translate('converting') || 'Converting PDF...');
+
+        try {
+            // 2. Prepare FormData
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // 3. Send POST request
+            const response = await fetch('https://api.izgi.me/convert-pdf', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                if (response.status === 400) {
+                    alert("Bu PDF taranmış bir resim gibi görünüyor, içinde çizim verisi bulunamadı.");
+                    throw new Error('PDF conversion failed: No vector data found (400)');
+                }
+                throw new Error(`Conversion API failed: ${response.status}`);
+            }
+
+            // 4. Get Blob
+            const blob = await response.blob();
+
+            // 5. Convert to File object
+            const convertedFile = new File([blob], file.name.replace(/\.pdf$/i, '.dxf'), {
+                type: 'application/dxf'
+            });
+
+            // Update tab file reference to the converted one
+            const activeTab = this.tabManager.getActiveTab();
+            activeTab.file = convertedFile;
+
+            // 6. Load converted DXF
+            await this.processDxfFile(convertedFile);
+
+        } catch (error) {
+            console.error('PDF Conversion Error:', error);
+            if (!error.message.includes('No vector data found')) {
+                alert(this.languageManager.translate('conversionFailed') || 'Dönüştürme başarısız oldu');
+            }
+            this.updateStatus('Conversion Failed');
+        } finally {
+            // 7. Hide Loader
             if (loader) loader.classList.add('hidden');
         }
     }

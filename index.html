@@ -62,7 +62,7 @@
                             <span data-i18n="templates">Templates</span>
                         </button>
                     </div>
-                    <input type="file" id="file-input" accept=".dxf,.dwg" hidden>
+                    <input type="file" id="file-input" accept=".dxf,.dwg,.pdf" hidden>
                 </div>
 
                 <!-- Download Button -->
@@ -182,6 +182,19 @@
                             <line x1="6" y1="23" x2="18" y2="23" />
                             <line x1="1" y1="15" x2="9" y2="15" />
                             <line x1="15" y1="15" x2="23" y2="15" />
+                        </svg>
+                    </button>
+
+                    <!-- Scale Button (New) -->
+                    <button class="icon-btn tool-btn disabled:opacity-50 disabled:cursor-not-allowed group-is-disabled"
+                        id="scale-btn" title="Scale Objects" data-i18n-title="scaleBtn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"
+                            stroke="currentColor" stroke-linecap="round" stroke-width="1.5" fill="none">
+                            <rect width="10" height="10" x="1" y="12" stroke-opacity="0.8" rx="0.25" ry="0.25" />
+                            <line x1="5" y1="11" x2="5" y2="1" />
+                            <line x1="5" y1="1" x2="23" y2="1" />
+                            <line x1="23" y1="1" x2="23" y2="18" />
+                            <line x1="23" y1="18" x2="12" y2="18" />
                         </svg>
                     </button>
                 </div>
@@ -316,6 +329,33 @@
                         <div id="measurement-result" class="measurement-result">
                             <p class="empty-state" data-i18n="clickObjectInfo">Click an object to view info</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Gap Tolerance Panel (New) -->
+                <div id="gap-tolerance-panel" class="panel mt-4 hidden">
+                    <div class="panel-header">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 21v-7" />
+                            <path d="M20 21v-7" />
+                            <path d="M12 21v-7" />
+                            <path d="M2 10l10-7 10 7" />
+                        </svg>
+                        <h3 data-i18n="gapTolerance">Gap Tolerance</h3>
+                    </div>
+                    <div class="panel-content p-3">
+                        <div
+                            class="bg-gradient-to-l from-white/10 to-transparent rounded-lg p-3 flex justify-between items-center border border-white/5">
+                            <span class="text-gray-200 font-medium text-sm" data-i18n="tolerance">Tolerance (mm)</span>
+                            <div class="relative w-24">
+                                <input type="number" id="gap-tolerance-input" value="0.01" step="0.01" min="0.001"
+                                    max="10"
+                                    class="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-right text-sm text-cyan-400 focus:outline-none focus:border-cyan-500 transition-colors font-mono appearance-none" />
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2 text-center" data-i18n="toleranceHint">
+                            Increase for PDF/Scanned files with gaps.
+                        </p>
                     </div>
                 </div>
 
@@ -628,9 +668,8 @@
                                         <h3 class="text-xl font-semibold text-white mb-2" data-i18n="uploadFile">Open
                                             File
                                         </h3>
-                                        <p class="text-sm text-gray-400" data-i18n="uploadFileDesc">Open local DXF or
-                                            DWG
-                                            files</p>
+                                        <p class="text-sm text-gray-400" data-i18n="uploadFileDesc">Open local DXF, DWG
+                                            or PDF files</p>
                                     </div>
                                 </label>
 
@@ -787,6 +826,40 @@
                     </svg>
                     <span data-i18n="downloadBtn">Download</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scale Confirmation Modal (New) -->
+    <div id="scale-modal"
+        class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] flex items-center justify-center">
+        <div class="bg-gray-900/95 border border-white/10 rounded-xl shadow-2xl p-6 w-[350px]">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-white" data-i18n="scaleTitle">Scale Objects</h3>
+                <button id="scale-modal-close" class="text-gray-400 hover:text-white transition-colors">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="mb-5 space-y-4">
+                <p class="text-sm text-gray-300" data-i18n="scaleFactor">Enter scale factor:</p>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="scale-factor-input" value="1.0"
+                        class="w-full bg-black/30 border border-white/10 rounded px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 transition-colors" />
+                </div>
+            </div>
+
+            <div class="flex gap-2 justify-end">
+                <button id="scale-cancel-btn"
+                    class="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white font-medium transition-colors text-sm"
+                    data-i18n="cancel">Cancel</button>
+                <button id="scale-confirm-btn"
+                    class="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium transition-colors text-sm"
+                    data-i18n="ok">OK</button>
             </div>
         </div>
     </div>
