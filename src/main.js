@@ -726,12 +726,12 @@ class DXFViewerApp {
             const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
             let point = null;
-            let hitObject = null;
+            let intersect = null;
 
             const pointer = new THREE.Vector2(x, y);
             const intersects = this.viewer.raycast(pointer);
             if (intersects.length > 0) {
-                hitObject = intersects[0].object;
+                intersect = intersects[0];
             }
 
             const snap = this.snappingManager.activeSnap;
@@ -744,7 +744,7 @@ class DXFViewerApp {
                 point = vec;
             }
 
-            this.measurementManager.handleClick(point, hitObject);
+            this.measurementManager.handleClick(point, intersect);
             if (this.snappingManager) this.snappingManager.clearSticky(); // Clear sticky after click
             return;
         }
