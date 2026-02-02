@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SceneViewer } from './scene-viewer.js';
-import { DxfLoader } from './dxf-loader.js';
+import { LoaderManager } from './loaders/LoaderManager.js';
 import { LanguageManager } from './localization.js';
 import { SnappingManager } from './snapping-manager.js';
 import { MeasurementManager } from './measurement-manager.js';
@@ -10,6 +10,7 @@ import { CommandHistory } from './command-history.js';
 import { CmdAddMeasurement, CmdDelete } from './commands.js';
 import { ClipboardManager } from './clipboard-manager.js';
 import { ScaleManager } from './scale-manager.js';
+import { SelectionHelper } from './selection-helper.js';
 
 
 import { TabManager } from './tab-manager.js';
@@ -18,6 +19,9 @@ import { TabManager } from './tab-manager.js';
 class DXFViewerApp {
     constructor() {
         this.canvas = document.getElementById('viewport');
+        this.viewer = new SceneViewer(this.canvas);
+        this.loader = new LoaderManager();
+        this.selectionHelper = new SelectionHelper();
         this.selectedObjects = [];
         this.selectionState = {
             active: false,
@@ -37,11 +41,11 @@ class DXFViewerApp {
 
         this.history = new CommandHistory((canUndo, canRedo) => this.updateUndoRedoUI(canUndo, canRedo));
 
-        this.viewer = new SceneViewer(this.canvas);
+        // this.viewer is already created in constructor
         this.viewer.languageManager = this.languageManager;
         this.viewer.app = this;
 
-        this.loader = new DxfLoader();
+        this.loaderManager = new LoaderManager();
 
         // Tab Manager Initialization
         this.tabManager = new TabManager(this.viewer, this);
@@ -66,7 +70,7 @@ class DXFViewerApp {
                 this.history.execute(new CmdAddMeasurement(this.measurementManager, data));
             }
         );
-        this.objectInfoManager = new ObjectInfoManager(this.viewer, this.measurementManager);
+        this.objectInfoManager = new ObjectInfoManager(this.viewer, this.measurementManager, this);
         this.weightManager = new WeightManager(
             this,
             this.languageManager,
@@ -164,6 +168,8 @@ class DXFViewerApp {
         const menuNewFile = document.getElementById('menu-new-file');
         if (menuNewFile) {
             menuNewFile.addEventListener('click', () => {
+                this.viewer.clear(); // Clear Scene and Clipping
+                this.objectInfoManager.clear(); // Clear selection UI
                 this.tabManager.createNewTab("New File");
                 fileDropdown?.classList.add('hidden');
             });
@@ -182,6 +188,8 @@ class DXFViewerApp {
         const startNewFile = document.getElementById('start-new-file');
         if (startNewFile) {
             startNewFile.addEventListener('click', () => {
+                this.viewer.clear();
+                this.objectInfoManager.clear();
                 this.tabManager.createNewTab("New File");
             });
         }
@@ -481,6 +489,14 @@ class DXFViewerApp {
                 return;
             }
 
+            // Priority 2.3: Cancel Section Tool if active
+            if (this.objectInfoManager && this.objectInfoManager.isSectionActive) {
+                console.log('[Main] ESC - Canceling section tool');
+                this.objectInfoManager.clear();
+                this.updateStatus('Section tool cancelled.');
+                return;
+            }
+
             // Priority 2.5: Deactivate Weight Calculation Mode
             if (this.weightManager && this.weightManager.isActive) {
                 this.weightManager.close(); // Deactivates and clears selection via callback
@@ -537,7 +553,16 @@ class DXFViewerApp {
 
     clearSelection() {
         if (this.viewer && this.viewer.dxfGroup) {
-            this.selectedObjects.forEach(obj => this.viewer.highlightObject(obj, false));
+            this.selectedObjects.forEach(obj => {
+                this.viewer.highlightObject(obj, false);
+                // Clean up Smart Selection Meshes from scene
+                if (obj.userData.isSmartSelection) {
+                    obj.parent.remove(obj);
+                    // Dispose geometry/material?
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) obj.material.dispose();
+                }
+            });
         }
         if (this.measurementManager && this.measurementManager.group) {
             this.measurementManager.group.children.forEach(c => this.viewer.highlightObject(c, false));
@@ -693,16 +718,14 @@ class DXFViewerApp {
         const box = document.getElementById('selection-box');
         if (!box) return;
 
-        const rect = this.canvas.getBoundingClientRect();
-        const startX = this.selectionState.startX - rect.left;
-        const startY = this.selectionState.startY - rect.top;
-        const currentX = curX - rect.left;
-        const currentY = curY - rect.top;
+        // CSS is fixed, so use client coordinates directly
+        const startX = this.selectionState.startX;
+        const startY = this.selectionState.startY;
 
-        const left = Math.min(startX, currentX);
-        const top = Math.min(startY, currentY);
-        const width = Math.abs(currentX - startX);
-        const height = Math.abs(currentY - startY);
+        const left = Math.min(startX, curX);
+        const top = Math.min(startY, curY);
+        const width = Math.abs(curX - startX);
+        const height = Math.abs(curY - startY);
 
         box.style.left = left + 'px';
         box.style.top = top + 'px';
@@ -710,7 +733,7 @@ class DXFViewerApp {
         box.style.height = height + 'px';
         box.classList.remove('hidden');
 
-        if (currentX < startX) {
+        if (curX < startX) {
             box.classList.add('crossing');
             box.classList.remove('window');
         } else {
@@ -746,6 +769,26 @@ class DXFViewerApp {
 
             this.measurementManager.handleClick(point, intersect);
             if (this.snappingManager) this.snappingManager.clearSticky(); // Clear sticky after click
+            return;
+        }
+
+        // Single Selection Mode (No Tool Active)
+        if (!this.measurementManager || !this.measurementManager.activeTool) {
+            const rect = this.canvas.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+            const pointer = new THREE.Vector2(x, y);
+
+            const intersects = this.viewer.raycast(pointer);
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                this.handleObjectSelection(intersect, e.ctrlKey || e.shiftKey); // Support multi-select
+            } else {
+                // Click on empty space -> Clear selection
+                if (!e.ctrlKey && !e.shiftKey) {
+                    this.clearSelection();
+                }
+            }
             return;
         }
 
@@ -906,7 +949,11 @@ class DXFViewerApp {
                 this.selectedObjects.push(target);
             }
 
-            this.objectInfoManager.update(this.selectedObjects);
+            // Pass the original hit intersection to ObjectInfoManager if single selection
+            // Use intersects[0] from the Raycast result (variable 'intersects' in scope)
+            const context = (this.selectedObjects.length === 1 && intersects.length > 0) ? intersects[0] : null;
+
+            this.objectInfoManager.update(this.selectedObjects, context);
             this.weightManager.update(this.selectedObjects);
             this.updateStatus(this.selectedObjects.length > 0 ? 'Selected: ' + this.selectedObjects.length + ' items' : 'Ready');
 
@@ -1226,31 +1273,46 @@ class DXFViewerApp {
     }
 
     async processDxfFile(file) {
-        this.updateStatus('Parsing DXF...');
+        this.updateStatus('Loading ' + file.name + '...');
         try {
-            this.updateDownloadButtonState(); // Updates based on activeTab.file
+            this.updateDownloadButtonState();
 
-            const dxf = await this.loader.load(file);
-            console.log('DXF Data:', dxf);
-            this.dxf = dxf; // Keep generic reference, though might be per-tab? 
-            // Ideally detailed DXF data should be in tab state if needed later.
+            const result = await this.loaderManager.load(file);
+            console.log('Loaded Data:', result);
 
-            this.updateStatus('Generating 3D Scene...');
-            if (dxf) {
-                const group = this.loader.generateThreeEntities(dxf);
-                console.log('Generated ' + group.children.length + ' entities from DXF');
+            this.dxf = result.type === 'dxf' ? result.data : null;
 
-                // Add to Viewer (which is linked to Active Tab Group)
-                this.viewer.setEntities(group);
+            this.updateStatus('Generating Scene...');
 
-                this.updateStatus('Loaded ' + file.name);
+            const group = result.group;
+            if (group) {
+                console.log('Generated ' + group.children.length + ' entities');
+                this.viewer.setEntities(group, result.type);
+                if (result.type === 'model') {
+                    // Report Face Count if available
+                    if (group.children.length > 0) {
+                        this.updateStatus(`Model loaded. Components/Faces: ${group.children.length}`);
+                    } else {
+                        this.updateStatus('Loaded 3D Model (Single Mesh).');
+                    }
+                } else {
+                    this.updateStatus('Loaded ' + file.name);
+                }
                 this.updateEntityTree(group.children);
-                this.updateLayersPanel(this.viewer.dxfGroup);
 
-                // No need to update #file-name element as we now use Tabs
+                // Layer panel update needs to be safe for non-dxf
+                if (result.type === 'dxf') {
+                    this.updateLayersPanel(this.viewer.dxfGroup);
+                } else {
+                    // For models, maybe create a default layer?
+                    // The viewer.dxfGroup acts as the root for content.
+                    // We can populate a fake layer for the model.
+                    this.updateLayersPanel(this.viewer.dxfGroup);
+                }
             }
 
-            // Enable Measurement Tools & Action Buttons
+            // Enable Tools
+            // For 3D models, some 2D tools might not make sense (e.g., 2D area) but we can leave them enabled for now
             const ids = ['tool-distance', 'tool-angle', 'tool-radius', 'tool-diameter', 'tool-area', 'download-btn', 'print-btn'];
             ids.forEach(id => {
                 const btn = document.getElementById(id);
@@ -1267,8 +1329,8 @@ class DXFViewerApp {
 
         } catch (err) {
             console.error(err);
-            this.updateStatus('Error parsing DXF');
-            alert('Error loading DXF file. See console for details.');
+            this.updateStatus('Error loading file');
+            alert('Error loading file: ' + err.message);
         }
     }
 
@@ -1540,6 +1602,153 @@ class DXFViewerApp {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    }
+
+    handleObjectSelection(intersect, isMultiSelect) {
+        if (!intersect) return;
+        const hit = intersect.object;
+        let target = hit;
+
+        // Check for CAD Face (OCCT - Explicit)
+        if (hit.userData && hit.userData.faceId !== undefined) {
+            target = hit;
+        }
+        // fallback: Smart Selection for single mesh
+        else if (hit.isMesh && hit.geometry && hit.geometry.index) {
+            if (hit.userData.isSmartSelection) {
+                target = hit;
+            } else {
+                // Create Smart Selection
+                const indices = this.selectionHelper.selectConnectedFaces(hit, intersect.faceIndex);
+                if (indices.length > 0) {
+                    target = this.createSmartSelectionMesh(hit, indices);
+                }
+            }
+        }
+        else {
+            // Handle DXF Entity Hierarchy (Dimensions, Inserts)
+            if (hit.parent && hit.parent.userData) {
+                const pType = hit.parent.userData.type;
+                if (pType === 'DIMENSION' || pType === 'INSERT') {
+                    target = hit.parent;
+                }
+            }
+            if (hit.userData.type === 'DIMENSION') target = hit;
+        }
+
+        const idx = this.selectedObjects.indexOf(target);
+
+        if (isMultiSelect) {
+            // Toggle
+            if (idx > -1) {
+                // Remove
+                this.viewer.highlightObject(target, false);
+                this.selectedObjects.splice(idx, 1);
+                // If it was a smart selection, maybe remove it from scene?
+                if (target.userData.isSmartSelection) {
+                    target.parent.remove(target);
+                    // geometry dispose?
+                }
+            } else {
+                // Add
+                this.viewer.highlightObject(target, true);
+                this.selectedObjects.push(target);
+            }
+        } else {
+            // Single Select
+            this.clearSelection();
+            this.viewer.highlightObject(target, true);
+            this.selectedObjects = [target];
+        }
+
+        // Update UI
+        this.objectInfoManager.update(this.selectedObjects);
+        this.weightManager.update(this.selectedObjects);
+        if (this.scaleManager) this.scaleManager.updateButtonState(this.selectedObjects);
+        this.updateWeightButtonState(this.selectedObjects.length > 0);
+        this.updateStatus('Selected ' + this.selectedObjects.length + ' item(s)');
+    }
+
+    createSmartSelectionMesh(originalMesh, faceIndices) {
+        // faceIndices are Triangle indices.
+        // We need to construct a new BufferGeometry from these triangles.
+        const originGeo = originalMesh.geometry;
+        const posAttr = originGeo.attributes.position;
+        const normAttr = originGeo.attributes.normal;
+        const indexAttr = originGeo.index;
+
+        // Count vertices needed? No, usually we just assume disjoint selection 
+        // or just copy indices to a new index buffer for the subset?
+        // But the subset might range across the whole vertex buffer.
+        // Easiest (but maybe memory heavy): detailed clone.
+        // Better: Share attributes, separate index.
+
+        // Construct new Index Array
+        const newIndices = new Uint32Array(faceIndices.length * 3);
+        for (let i = 0; i < faceIndices.length; i++) {
+            const fIdx = faceIndices[i];
+            newIndices[i * 3] = indexAttr.getX(fIdx * 3);
+            newIndices[i * 3 + 1] = indexAttr.getX(fIdx * 3 + 1);
+            newIndices[i * 3 + 2] = indexAttr.getX(fIdx * 3 + 2);
+        }
+
+        const newGeo = new THREE.BufferGeometry();
+        newGeo.setAttribute('position', posAttr); // Share reference
+        if (normAttr) newGeo.setAttribute('normal', normAttr); // Share reference
+        newGeo.setIndex(new THREE.BufferAttribute(newIndices, 1));
+
+        // Material
+        // const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true, depthTest: false }); // Debug
+        // Use standard material but maybe offset or just rely on highlightHelper?
+        // Actually, we want to return a Mesh that LOOKS like the selection.
+        // But the viewer.highlightObject handles the Visual Highlight (red overlay).
+        // So this mesh can be invisible? Or just a transparent overlay?
+        // Actually, for it to be "Selected", it enters selectedObjects.
+        // Viewer.highlightObject adds a SelectionHelper BOX or Edge? 
+        // Viewer.highlightObject usually changes material emissive OR adds a box.
+        // Let's make it a clone of original material.
+
+        const material = originalMesh.material.clone();
+        // material.color.setHex(0xff0000); // Test
+
+        const mesh = new THREE.Mesh(newGeo, material);
+        mesh.applyMatrix4(originalMesh.matrixWorld); // Apply transform? 
+        // Wait, if we add it to Scene, we need world pos.
+        // If we add it to originalMesh parent, we use local.
+
+        // Usually originalMesh is in a group.
+        // If we add to scene root, we use World Matrix (or manual Copy).
+        // Better to add to same parent? 
+        // But originalMesh might be rotated.
+        // Let's add to viewer.dxfGroup or Scene.
+        // If we share geometry attributes (which are local space), we must match the transform of original mesh.
+
+        mesh.position.copy(originalMesh.position);
+        mesh.rotation.copy(originalMesh.rotation);
+        mesh.scale.copy(originalMesh.scale);
+        mesh.updateMatrixWorld();
+
+        mesh.userData = {
+            type: 'FACE',
+            faceId: 'Smart-' + faceIndices[0], // ID
+            isSmartSelection: true,
+            originalColor: originalMesh.userData.originalColor || material.color
+        };
+
+        // Add to scene to be rendered and raycasted?
+        // Actually, if we add it, it overlaps exactly (z-fight).
+        // Ideally, we just use it for "Selection Logic".
+        // But we want the user to SEE it selected.
+        // Viewer.highlightObject usually does:
+        // if (val) material.emissive.setHex(0x...);
+
+        // To avoid Z-fight, polygonOffset?
+        material.polygonOffset = true;
+        material.polygonOffsetFactor = -1;
+        material.polygonOffsetUnits = -1;
+
+        this.viewer.dxfGroup.add(mesh);
+        return mesh;
     }
 }
 

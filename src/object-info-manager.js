@@ -2,24 +2,74 @@
 import * as THREE from 'three';
 
 export class ObjectInfoManager {
-    constructor(viewer, measurementManager) {
+    constructor(viewer, measurementManager, app) {
         this.viewer = viewer;
         this.measurementManager = measurementManager;
+        this.app = app;
         this.container = document.getElementById('measurement-result');
     }
 
-    update(selectedObjects) {
+    update(objects, context = null) {
         if (!this.container) return;
 
-        if (!selectedObjects || selectedObjects.length === 0) {
-            this.container.innerHTML = '<p class="empty-state" data-i18n="clickObjectInfo">' + this.t('clickObjectInfo') + '</p>';
-            return;
+        if (!objects || objects.length === 0) {
+            this.renderEmpty();
+        } else if (objects.length === 1) {
+            this.renderSingleObject(objects[0], context);
+        } else {
+            this.renderMultipleObjects(objects);
+        }
+    }
+
+    renderEmpty() {
+        this.container.innerHTML = '<p class="empty-state">Click an object to view info</p>';
+    }
+
+    clear() {
+        this.renderEmpty();
+
+        // Reset Section State
+        this.isSectionActive = false;
+        this.activeSection = null;
+        this.activeSectionObject = null;
+        this.sectionCapSize = null; // Reset cached size
+
+        // Ensure visual helper is removed
+        if (this.viewer && this.viewer.sectionHelper) {
+            this.viewer.scene.remove(this.viewer.sectionHelper);
+            if (this.viewer.sectionHelper.geometry) this.viewer.sectionHelper.geometry.dispose();
+            if (this.viewer.sectionHelper.material) this.viewer.sectionHelper.material.dispose();
+            this.viewer.sectionHelper = null;
         }
 
-        if (selectedObjects.length === 1) {
-            this.renderSingleObject(selectedObjects[0]);
-        } else {
-            this.renderMultiObject(selectedObjects);
+        // Reset renderer clipping - CRITICAL for restoring visibility
+        if (this.viewer && this.viewer.renderer) {
+            this.viewer.renderer.clippingPlanes = [];
+            this.viewer.renderer.localClippingEnabled = false;
+            console.log('[ObjectInfo] Cleared renderer clipping planes');
+
+            // CRITICAL: Clear clipping from ALL materials in the scene
+            // Three.js may cache clipping planes on materials
+            if (this.viewer.scene) {
+                this.viewer.scene.traverse((child) => {
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                mat.clippingPlanes = [];
+                            });
+                        } else {
+                            child.material.clippingPlanes = [];
+                        }
+                    }
+                });
+                console.log('[ObjectInfo] Cleared all material clipping planes');
+            }
+
+            // Force immediate re-render to show changes
+            if (this.viewer.scene && this.viewer.camera) {
+                this.viewer.renderer.render(this.viewer.scene, this.viewer.camera);
+                console.log('[ObjectInfo] Forced render - part should be fully visible now');
+            }
         }
     }
 
@@ -27,7 +77,7 @@ export class ObjectInfoManager {
         return this.viewer.languageManager ? this.viewer.languageManager.translate(key) : key;
     }
 
-    renderSingleObject(object) {
+    renderSingleObject(object, context = null) {
         let content = '';
         const entity = object.userData.entity;
 
@@ -58,6 +108,104 @@ export class ObjectInfoManager {
         let type = object.userData.type || 'Unknown';
         if (object.isGroup) type = 'Polyline/Group'; // Refined Polyline Group
 
+        // 3D Mesh Handling
+        if (object.isMesh && !object.userData.entity) {
+            const geo = object.geometry;
+            content += '<div class="info-header"><strong>3D Mesh (Face)</strong></div>';
+            content += this.row('ThreeJS ID', object.id);
+            // content += this.row('UUID', object.uuid.substring(0, 8));
+            if (object.userData.faceId !== undefined) {
+                content += this.row('Face ID', object.userData.faceId);
+            }
+            if (geo.attributes.position) {
+                content += this.row('Vertices', geo.attributes.position.count);
+                const triCount = geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
+                content += this.row('Triangles', Math.floor(triCount));
+            }
+
+            // Area Calculation
+            const area = this.calculateMeshArea(object);
+            content += this.row('Surface Area', area.toFixed(2) + ' mm²');
+
+            // content += `<button id="btn-extract-face" ...>Copy Face to 2D</button>`; // Removed as per request (Ctrl+C works)
+
+            content += `<div class="mt-3 pt-2 border-t border-white/10">`;
+            content += `<div class="flex items-center gap-2 mb-2">`;
+            content += `<span class="text-xs text-gray-400">Offset:</span>`;
+            content += `<input type="number" id="section-offset" value="0.0" step="1.0" class="flex-1 min-w-[50px] bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white text-right font-mono focus:outline-none focus:border-purple-500">`;
+
+            // Flip Button using ⇌ symbol
+            // Inline style for checked state coloring to match theme
+            content += `<style>#section-flip:checked + label { background-color: #9333ea !important; border-color: #9333ea !important; color: white !important; }</style>`;
+            content += `<input type="checkbox" id="section-flip" class="hidden" checked>`;
+            content += `<label for="section-flip" class="cursor-pointer h-7 w-8 flex items-center justify-center bg-black/20 border border-white/10 rounded hover:bg-white/5 transition-colors text-white select-none text-base font-bold" title="Flip Direction" data-i18n-title="flipSection">`;
+            content += `⇌`;
+            content += `</label>`;
+            content += `</div>`;
+
+            content += `<button id="btn-section-face" class="w-full bg-purple-600 hover:bg-purple-500 text-white text-xs py-1.5 rounded transition-colors" data-id="${object.id}" data-i18n="createSection">Create Section</button>`;
+            content += `</div>`;
+
+            // Extract Section (Intersection) Button
+            content += `<button id="btn-extract-section" class="w-full mt-2 bg-green-600 hover:bg-green-500 text-white text-xs py-1.5 rounded transition-colors" data-id="${object.id}" data-i18n="copySectionProfile">Copy Section Profile</button>`;
+
+            this.container.innerHTML = content;
+
+            // CRITICAL: Trigger translation update for the newly added dynamic content
+            if (this.app && this.app.languageManager) {
+                this.app.languageManager.updateUI();
+            }
+
+            setTimeout(() => {
+                const btnSection = document.getElementById('btn-section-face');
+                const inputOffset = document.getElementById('section-offset');
+                const inputFlip = document.getElementById('section-flip');
+
+                if (btnSection && inputOffset) {
+                    const update = () => {
+                        const val = parseFloat(inputOffset.value) || 0;
+                        const flip = inputFlip ? inputFlip.checked : false;
+
+                        if (!this.isSectionActive || this.activeSectionObject !== object) {
+                            // Pass context when activating - context has the clicked face/point
+                            this.activateSection(object, context);
+                        } else {
+                            this.updateSectionOffset(val, null, flip);
+                        }
+                    };
+
+                    btnSection.onclick = update;
+                    inputOffset.addEventListener('input', update);
+                    // Generate Cap Mesh on Drag End (Change)
+                    inputOffset.addEventListener('change', () => {
+                        this.updateSectionOffset(parseFloat(inputOffset.value), null, inputFlip ? inputFlip.checked : false, true);
+                    });
+
+                    if (inputFlip) {
+                        inputFlip.addEventListener('change', () => {
+                            update();
+                            this.updateSectionOffset(parseFloat(inputOffset.value), null, inputFlip.checked, true);
+                        });
+                    }
+                }
+
+                // Extract Button
+                const btnExtractParams = document.getElementById('btn-extract-section');
+                if (btnExtractParams) {
+                    btnExtractParams.addEventListener('click', () => {
+                        // Ensure section is active to get correct plane
+                        if (!this.isSectionActive || this.activeSectionObject !== object) {
+                            this.activateSection(object);
+                        }
+                        // Small delay to ensure activeSection is updated if just activated
+                        setTimeout(() => this.extractSectionProfile(true), 10);
+                    });
+                }
+            }, 0);
+            return;
+        }
+
+        // Basic Info
         content += '<div class="info-header"><strong>' + this.t('Type') + ':</strong> ' + type + '</div>';
         content += '<div class="info-header"><strong>ID:</strong> ' + object.id + '</div>';
         if (object.userData.layer) {
@@ -228,6 +376,49 @@ export class ObjectInfoManager {
         return null;
     }
 
+    calculateMeshArea(mesh) {
+        if (!mesh || !mesh.geometry) return 0;
+        const geometry = mesh.geometry;
+        const pos = geometry.attributes.position;
+        const index = geometry.index;
+        let area = 0;
+
+        const vA = new THREE.Vector3();
+        const vB = new THREE.Vector3();
+        const vC = new THREE.Vector3();
+        const cb = new THREE.Vector3();
+        const ab = new THREE.Vector3();
+
+        if (index) {
+            for (let i = 0; i < index.count; i += 3) {
+                const a = index.getX(i);
+                const b = index.getX(i + 1);
+                const c = index.getX(i + 2);
+
+                vA.fromBufferAttribute(pos, a);
+                vB.fromBufferAttribute(pos, b);
+                vC.fromBufferAttribute(pos, c);
+
+                cb.subVectors(vC, vB);
+                ab.subVectors(vA, vB);
+                cb.cross(ab);
+                area += 0.5 * cb.length();
+            }
+        } else {
+            for (let i = 0; i < pos.count; i += 3) {
+                vA.fromBufferAttribute(pos, i);
+                vB.fromBufferAttribute(pos, i + 1);
+                vC.fromBufferAttribute(pos, i + 2);
+
+                cb.subVectors(vC, vB);
+                ab.subVectors(vA, vB);
+                cb.cross(ab);
+                area += 0.5 * cb.length();
+            }
+        }
+        return area;
+    }
+
     row(label, value) {
         return '<div class="flex justify-between text-sm mb-1"><span class="text-gray-400">' + label + ':</span> <span class="text-white font-mono">' + value + '</span></div>';
     }
@@ -331,5 +522,685 @@ export class ObjectInfoManager {
         iMinus.addEventListener('input', () => {
             updateObj();
         });
+    }
+
+    async handleExtractFace(object) {
+        if (!this.app || !this.app.clipboardManager) return;
+
+        // 1. Get Edges
+        const geometry = object.geometry;
+        const edges = new THREE.EdgesGeometry(geometry, 10); // threshold angle
+        const positions = edges.attributes.position;
+
+        // 2. Prepare Transform (Align Face Normal to Z-Up)
+        geometry.computeVertexNormals();
+        const normalAttribute = geometry.attributes.normal;
+        const normal = new THREE.Vector3();
+        if (normalAttribute && normalAttribute.count > 0) {
+            normal.set(normalAttribute.getX(0), normalAttribute.getY(0), normalAttribute.getZ(0));
+            normal.applyMatrix3(new THREE.Matrix3().getNormalMatrix(object.matrixWorld)).normalize();
+        } else {
+            normal.set(0, 0, 1);
+        }
+
+        // Quaternion to rotate Normal to (0,0,1)
+        const targetNormal = new THREE.Vector3(0, 0, 1);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(normal, targetNormal);
+
+        // 3. Create Entities
+        const entities = [];
+
+        for (let i = 0; i < positions.count; i += 2) {
+            const v1 = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i));
+            const v2 = new THREE.Vector3(positions.getX(i + 1), positions.getY(i + 1), positions.getZ(i + 1));
+
+            // Apply Object Matrix 
+            v1.applyMatrix4(object.matrixWorld);
+            v2.applyMatrix4(object.matrixWorld);
+
+            // Apply Flattening Rotation
+            v1.applyQuaternion(quaternion);
+            v2.applyQuaternion(quaternion);
+
+            // Create Fake Entity
+            const entity = {
+                type: 'LINE',
+                startPoint: { x: v1.x, y: v1.y, z: 0 },
+                endPoint: { x: v2.x, y: v2.y, z: 0 },
+                layer: '0',
+                color: 0xFFFFFF
+            };
+
+            // Create Real Line Object (for Clipboard Thumbnail)
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(v1.x, v1.y, 0),
+                new THREE.Vector3(v2.x, v2.y, 0)
+            ]);
+
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xFFFFFF });
+            const lineObj = new THREE.Line(lineGeo, lineMat);
+
+            lineObj.userData = {
+                type: 'LINE',
+                entity: entity,
+                layer: '0',
+                originalColor: 0xFFFFFF
+            };
+
+            entities.push(lineObj);
+        }
+
+        // 4. Copy to Clipboard
+        this.app.clipboardManager.copy(entities);
+        // Notify
+        if (this.app.languageManager) {
+            this.app.updateStatus(this.app.languageManager.translate('copiedToClipboard') || 'Copied face to clipboard');
+        }
+    }
+
+    activateSection(object, context = null) {
+        if (!this.viewer || !this.viewer.renderer) return;
+
+        console.log('[ObjectInfo] Activating Section for', object.id);
+        console.log('[ObjectInfo] Context:', context);
+        console.log('[ObjectInfo] Context.point:', context ? context.point : 'NO CONTEXT');
+        this.isSectionActive = true;
+        if (context) console.log('[ObjectInfo] Using Selection Context:', context);
+
+        const geometry = object.geometry;
+        const normal = new THREE.Vector3(0, 0, 1); // Default Z
+        const anchorPoint = new THREE.Vector3();
+
+        // Priority 1: Use Context (Raycast Hit)
+        if (context && context.face) {
+            // Face Normal
+            normal.copy(context.face.normal);
+            // Transform normal to World Space
+            // context.face.normal is usually in Object Space for BufferGeometry?
+            // "Raycaster returns face normal in world space usually? No, check docs."
+            // THREE.Raycaster: ".face.normal" is in LOCAL space for BufferGeometry.
+            const normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld);
+            normal.applyMatrix3(normalMatrix).normalize();
+
+            // Anchor: Use the exact hit point (World Space)
+            anchorPoint.copy(context.point);
+        }
+        // Priority 2: Fallback to Geometry Attribute (First Face)
+        else {
+            // Calculate Face Normal and Center
+            geometry.computeVertexNormals();
+            const normalAttribute = geometry.attributes.normal;
+
+            if (normalAttribute && normalAttribute.count > 0) {
+                normal.set(normalAttribute.getX(0), normalAttribute.getY(0), normalAttribute.getZ(0));
+                // Apply Normal Matrix
+                const normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld);
+                normal.applyMatrix3(normalMatrix).normalize();
+
+                // Standard Normal usually points OUT.
+                // If we want to clip the "Front" (Normal direction), we generally need the plane normal 
+                // to point "In" or "Out" depending on renderer clipping logic.
+                // Renderer clips "Negative" side usually? Or "Positive"?
+                // THREE.js: "Objects on the negative side of the plane are not rendered." (dist < 0 clipped).
+                // Normal points OUT. Inside points are "Behind" (Negative dot product relative to face).
+                // So Inside points have dist < 0 -> Clipped.
+                // So currently, using Face Normal -> Inside is clipped.
+                // User wants Inside VISIBLE. So we need Inside to be Positive.
+                // So Normal must point IN (Reserved).
+                // normal.negate(); // Removed as per instruction, assuming normal points IN for desired clipping
+
+                // Anchor to the first vertex of the face (in World Space)
+                // Use Position Attribute, not BBox Center
+                const posAttr = geometry.attributes.position;
+                if (posAttr && posAttr.count > 0) {
+                    anchorPoint.set(posAttr.getX(0), posAttr.getY(0), posAttr.getZ(0));
+                    anchorPoint.applyMatrix4(object.matrixWorld);
+                } else {
+                    geometry.computeBoundingBox();
+                    geometry.boundingBox.getCenter(anchorPoint);
+                    anchorPoint.applyMatrix4(object.matrixWorld);
+                }
+            } else {
+                console.warn('[ObjectInfo] No normal attribute found, defaulting to Z');
+                geometry.computeBoundingBox();
+                geometry.boundingBox.getCenter(anchorPoint);
+                anchorPoint.applyMatrix4(object.matrixWorld);
+            }
+        }
+
+        if (normal.lengthSq() < 0.1) {
+            console.warn('[ObjectInfo] Normal became zero!', normal);
+            normal.set(0, 0, 1);
+        }
+
+
+        console.log('[ObjectInfo] Active Section Normal:', normal);
+        console.log('[ObjectInfo] Anchor Point:', anchorPoint);
+
+        // Calculate geometry center for debugging
+        geometry.computeBoundingBox();
+        const geometryCenter = new THREE.Vector3();
+        geometry.boundingBox.getCenter(geometryCenter);
+        geometryCenter.applyMatrix4(object.matrixWorld);
+        console.log('[ObjectInfo] Geometry center:', geometryCenter);
+
+        // Size for Helper (Bounding Sphere Radius)
+        geometry.computeBoundingSphere();
+        const worldScale = new THREE.Vector3();
+        object.getWorldScale(worldScale);
+        const maxScale = Math.max(worldScale.x, worldScale.y, worldScale.z);
+        const helperSize = (geometry.boundingSphere ? geometry.boundingSphere.radius : 50) * maxScale * 2.5;
+
+
+        // Base Constant (Plane passing through anchor)
+        // constant = - (normal . anchor)
+        const baseConstant = -normal.dot(anchorPoint);
+
+        // Calculate initial offset to align plane with selected face
+        let initialOffset = 0;
+        let faceCenter = null;
+
+        // Try to get face center from context or geometry
+        if (object.userData.faceId !== undefined && geometry.index) {
+            // Calculate face center from faceId stored in userData (PRIMARY)
+            const faceIdx = object.userData.faceId;
+            const idx = geometry.index;
+            const pos = geometry.attributes.position;
+
+            console.log('[ObjectInfo] Using faceId from userData:', faceIdx);
+            console.log('[ObjectInfo] Index count:', idx.count, 'Position count:', pos.count);
+
+            // Check if faceId is within bounds of this mesh's index buffer
+            const maxFaceIdx = Math.floor(idx.count / 3) - 1;
+            console.log('[ObjectInfo] Max face index for this mesh:', maxFaceIdx);
+
+            if (faceIdx <= maxFaceIdx) {
+                // Get the 3 vertices of the triangle
+                const i1 = idx.getX(faceIdx * 3);
+                const i2 = idx.getX(faceIdx * 3 + 1);
+                const i3 = idx.getX(faceIdx * 3 + 2);
+
+                console.log('[ObjectInfo] Vertex indices:', i1, i2, i3);
+
+                const v1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1));
+                const v2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2));
+                const v3 = new THREE.Vector3(pos.getX(i3), pos.getY(i3), pos.getZ(i3));
+
+                console.log('[ObjectInfo] Local vertices:', v1, v2, v3);
+
+                // Transform to world space
+                v1.applyMatrix4(object.matrixWorld);
+                v2.applyMatrix4(object.matrixWorld);
+                v3.applyMatrix4(object.matrixWorld);
+
+                console.log('[ObjectInfo] World vertices:', v1, v2, v3);
+
+                // Calculate center
+                faceCenter = new THREE.Vector3();
+                faceCenter.add(v1).add(v2).add(v3).divideScalar(3);
+
+                console.log('[ObjectInfo] Face center calculated:', faceCenter);
+            } else {
+                console.warn('[ObjectInfo] faceId', faceIdx, 'out of range for this mesh (max:', maxFaceIdx + ')');
+
+                // This mesh shares position attribute with others but has unique index buffer
+                // Calculate face center from actual indexed vertices
+                if (geometry.index && geometry.index.count > 0) {
+                    const posAttr = geometry.attributes.position;
+                    const v1 = new THREE.Vector3();
+                    const v2 = new THREE.Vector3();
+                    const v3 = new THREE.Vector3();
+
+                    // Get first triangle's vertices
+                    const i0 = geometry.index.getX(0);
+                    const i1 = geometry.index.getX(1);
+                    const i2 = geometry.index.getX(2);
+
+                    v1.fromBufferAttribute(posAttr, i0);
+                    v2.fromBufferAttribute(posAttr, i1);
+                    v3.fromBufferAttribute(posAttr, i2);
+
+                    // Calculate triangle center in local space
+                    const localCenter = new THREE.Vector3()
+                        .add(v1).add(v2).add(v3)
+                        .divideScalar(3);
+
+                    // Transform to world space
+                    localCenter.applyMatrix4(object.matrixWorld);
+                    faceCenter = localCenter;
+                    console.log('[ObjectInfo] Calculated from first triangle (world):', faceCenter);
+                    console.log('[ObjectInfo] Local triangle center:', v1, v2, v3);
+                } else {
+                    // Ultimate fallback
+                    faceCenter = anchorPoint.clone();
+                    console.log('[ObjectInfo] Using anchorPoint as fallback');
+                }
+            }
+        } else if (context && context.faceIndex !== undefined && geometry.index) {
+            // Calculate face center from faceIndex
+            const faceIdx = context.faceIndex;
+            const idx = geometry.index;
+            const pos = geometry.attributes.position;
+
+            // Get the 3 vertices of the triangle
+            const i1 = idx.getX(faceIdx * 3);
+            const i2 = idx.getX(faceIdx * 3 + 1);
+            const i3 = idx.getX(faceIdx * 3 + 2);
+
+            const v1 = new THREE.Vector3(pos.getX(i1), pos.getY(i1), pos.getZ(i1));
+            const v2 = new THREE.Vector3(pos.getX(i2), pos.getY(i2), pos.getZ(i2));
+            const v3 = new THREE.Vector3(pos.getX(i3), pos.getY(i3), pos.getZ(i3));
+
+            // Transform to world space
+            v1.applyMatrix4(object.matrixWorld);
+            v2.applyMatrix4(object.matrixWorld);
+            v3.applyMatrix4(object.matrixWorld);
+
+            // Calculate center
+            faceCenter = new THREE.Vector3();
+            faceCenter.add(v1).add(v2).add(v3).divideScalar(3);
+
+            console.log('[ObjectInfo] Face center from context.faceIndex:', faceCenter);
+        } else if (context && context.point) {
+            // Use clicked point if available
+            faceCenter = context.point.clone();
+            console.log('[ObjectInfo] Using context.point:', faceCenter);
+        }
+
+        // CRITICAL FIX: Recalculate baseConstant from face center
+        // This makes offset relative to the selected face, not to anchorPoint
+        let adjustedBaseConstant = baseConstant;
+
+        console.log('========== SECTION OFFSET DEBUG ==========');
+        console.log('[ObjectInfo] Normal vector:', normal);
+        console.log('[ObjectInfo] AnchorPoint (first vertex):', anchorPoint);
+        console.log('[ObjectInfo] Original baseConstant from anchorPoint:', baseConstant);
+
+        if (faceCenter) {
+            console.log('[ObjectInfo] Face Center:', faceCenter);
+
+            // CRITICAL FIX: Check if normal needs to be flipped
+            // If face center is on opposite side of geometry center, flip normal
+            const centerToFace = new THREE.Vector3().subVectors(faceCenter, geometryCenter);
+            const dotProduct = normal.dot(centerToFace);
+
+            console.log('[ObjectInfo] Geometry center to face direction:', centerToFace);
+            console.log('[ObjectInfo] Normal dot (center->face):', dotProduct);
+
+            // If dot product is negative, face and normal point in opposite directions
+            if (dotProduct < 0) {
+                console.warn('[ObjectInfo] Face opposes normal direction! Flipping normal.');
+                normal.negate();
+                console.log('[ObjectInfo] Flipped normal:', normal);
+            }
+
+            console.log('[ObjectInfo] Calculating: -normal.dot(faceCenter)');
+            console.log('[ObjectInfo]   normal.dot(faceCenter) =', normal.dot(faceCenter));
+
+            adjustedBaseConstant = -normal.dot(faceCenter);
+
+            console.log('[ObjectInfo] Adjusted baseConstant from face center:', adjustedBaseConstant);
+            console.log('[ObjectInfo] Difference (adjusted - original):', adjustedBaseConstant - baseConstant);
+
+            // Initial offset is 0 because we want to start AT the selected face
+            initialOffset = 0;
+            console.log('[ObjectInfo] Initial offset set to 0 (at selected face)');
+        } else {
+            console.log('[ObjectInfo] No face center found, using anchorPoint-based constant');
+            initialOffset = 0;
+        }
+        console.log('==========================================');
+
+        // Store active state with adjusted baseConstant
+        this.activeSection = {
+            normal: normal.clone(),
+            baseConstant: adjustedBaseConstant, // Use face-based constant
+            object: object
+        };
+        this.isSectionActive = true;
+        this.activeSectionObject = object;
+
+        console.log('[ObjectInfo] Section Activated with offset=0 at selected face');
+
+        // Set UI input to initial offset (0)
+        const inputOffset = document.getElementById('section-offset');
+        if (inputOffset) {
+            inputOffset.value = initialOffset.toFixed(2);
+        }
+
+        // Initial render with offset=0 (at selected face) and FLIP=TRUE (default)
+        // User requested default state to be Flipped
+        this.updateSectionOffset(initialOffset, helperSize, true);
+
+        // Notify App
+        this.app.updateStatus('Section Active. Adjust offset to move plane. Press ESC to cancel.');
+    }
+
+    updateSectionOffset(offset, helperSize = null, flip = false, createCap = false) {
+        if (!this.activeSection) return;
+
+        let { normal, baseConstant } = this.activeSection;
+
+        // Clone normal to avoid modifying the stored reference
+        let effectiveNormal = normal.clone();
+        let effectiveConstant = baseConstant;
+
+        // Flip checkbox: Reverse clipping direction WITHOUT moving the plane
+        // To keep plane at same geometric position when negating normal,
+        // we must also negate the constant
+        // Plane equation: n·P + d = 0
+        // If n → -n, then d → -d to keep same geometric plane
+        if (flip) {
+            effectiveNormal.negate();
+            effectiveConstant = -effectiveConstant;
+            console.log('[Section] Flip enabled - reversed normal and constant for clipping');
+        }
+
+        // Apply offset
+        // When flipped, offset direction is also reversed to maintain consistent behavior
+        let effectiveOffset = flip ? -offset : offset;
+
+        // New Constant: Shift constant by offset
+        const constant = effectiveConstant + effectiveOffset;
+
+        const plane = new THREE.Plane(effectiveNormal, constant);
+
+        // Apply to Renderer
+        this.viewer.renderer.clippingPlanes = [plane];
+        this.viewer.renderer.localClippingEnabled = true;
+
+        // Cap Logic: Calculate size from object bounding box
+        if (!this.sectionCapSize) {
+            const object = this.activeSection.object;
+            const bbox = new THREE.Box3().setFromObject(object);
+            const size = bbox.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            // Cap should match part dimensions, slightly smaller for better fit
+            const capDimension = maxDim * 0.15;
+            this.sectionCapSize = {
+                width: capDimension,
+                height: capDimension
+            };
+            console.log('[Cap] Calculated size from bbox:', capDimension, 'part size:', size);
+        }
+
+        // Use cached size
+        const width = this.sectionCapSize.width;
+        const height = this.sectionCapSize.height;
+
+        // Hide/Remove existing helper
+        if (this.viewer.sectionHelper) {
+            this.viewer.scene.remove(this.viewer.sectionHelper);
+            if (this.viewer.sectionHelper.geometry) this.viewer.sectionHelper.geometry.dispose();
+            if (this.viewer.sectionHelper.material) this.viewer.sectionHelper.material.dispose();
+            this.viewer.sectionHelper = null;
+        }
+
+        // Create consistent Cap with smooth rendering (same for both drag and static)
+        const capGeo = new THREE.PlaneGeometry(width, height, 1, 1);
+
+        // Smooth material
+        const capMat = new THREE.MeshBasicMaterial({
+            color: 0x00AEEF,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            depthTest: true,
+            polygonOffset: true,
+            polygonOffsetFactor: -4,
+            polygonOffsetUnits: -4,
+            clippingPlanes: [] // CRITICAL: Exempt cap from clipping to prevent self-clipping
+        });
+
+        const capMesh = new THREE.Mesh(capGeo, capMat);
+
+        // CRITICAL: Cap position calculation
+        // Use ORIGINAL normal (not flipped) and baseConstant + offset
+        // This keeps cap at correct position even when flip is toggled
+        const capConstant = baseConstant + offset;
+        const origin = normal.clone().multiplyScalar(-capConstant);
+
+        console.log('[Cap] original normal:', normal);
+        console.log('[Cap] effectiveNormal (for clipping):', effectiveNormal);
+        console.log('[Cap] baseConstant (original):', baseConstant);
+        console.log('[Cap] offset:', offset);
+        console.log('[Cap] capConstant (base + offset):', capConstant);
+        console.log('[Cap] constant (for clipping, after flip):', constant);
+        console.log('[Cap] Cap position (normal * -capConstant):', origin);
+
+        // Align cap orientation using ORIGINAL normal (not flipped)
+        // Cap should always face the same direction as the selected face
+        const up = new THREE.Vector3(0, 1, 0);
+        if (Math.abs(normal.dot(up)) > 0.99) up.set(1, 0, 0);
+        const xAxis = new THREE.Vector3().crossVectors(normal, up).normalize();
+        const yAxis = new THREE.Vector3().crossVectors(normal, xAxis).normalize();
+
+        capMesh.position.copy(origin);
+
+        // Align orientation using original normal
+        const matrix = new THREE.Matrix4().makeBasis(xAxis, yAxis, normal);
+        matrix.setPosition(origin);
+        capMesh.quaternion.setFromRotationMatrix(matrix);
+
+        // Offset cap AWAY from clipping plane to prevent being clipped
+        // Use effectiveNormal (which accounts for flip) not original normal
+        capMesh.position.add(effectiveNormal.clone().multiplyScalar(0.01));
+
+        console.log('[Cap] Final position after offset:', capMesh.position);
+
+        this.viewer.scene.add(capMesh);
+        this.viewer.sectionHelper = capMesh;
+    }
+
+    extractSectionProfile(isCopy = false) {
+        if (!this.isSectionActive || !this.activeSection || !this.activeSection.object) return;
+
+        console.log('[Section] Extracting profile...');
+        const object = this.activeSection.object;
+        const geometry = object.geometry;
+
+        // Ensure rendering context
+        if (!object.isMesh || !geometry) return;
+
+        // Get clipping plane (World Space)
+        // Reconstruct Current Plane from activeSection
+        // Reconstruct Current Plane from activeSection
+        const { normal, baseConstant } = this.activeSection;
+        const inputOffset = document.getElementById('section-offset');
+        const inputFlip = document.getElementById('section-flip');
+        const offset = inputOffset ? (parseFloat(inputOffset.value) || 0) : 0;
+        const flip = inputFlip ? inputFlip.checked : false;
+
+        // Clone normal
+        let effectiveNormal = normal.clone();
+        let effectiveConstant = baseConstant;
+
+        // Apply Flip
+        if (flip) {
+            effectiveNormal.negate();
+            effectiveConstant = -effectiveConstant;
+        }
+
+        // Apply offset - when flipped, reverse offset direction
+        let effectiveOffset = flip ? -offset : offset;
+        const constant = effectiveConstant + effectiveOffset;
+        const plane = new THREE.Plane(effectiveNormal, constant); // World Space Plane
+
+        // Transform Logic:
+        // We need to check intersection for ALL visible meshes in the scene
+        // because "Visual Clipping" is Global.
+
+        let targetMeshes = [];
+        if (this.viewer && this.viewer.dxfGroup) {
+            this.viewer.dxfGroup.traverse(child => {
+                if (child.isMesh && child.visible) {
+                    targetMeshes.push(child);
+                }
+            });
+        }
+
+        // If no global group, fallback to selected object
+        if (targetMeshes.length === 0 && object.isMesh) {
+            targetMeshes.push(object);
+        }
+
+        console.log(`[Section] checking ${targetMeshes.length} meshes for intersection...`);
+
+        // Intersection Logic
+        // Iterate all triangles. Check edge intersections.
+        // const pos = geometry.attributes.position; // Moved into processTriangle
+        // const index = geometry.index; // Moved into processTriangle
+        // const worldMatrix = object.matrixWorld; // Moved into processTriangle
+
+        console.log('[Section] Plane Constant:', plane.constant);
+        console.log('[Section] Plane Normal:', plane.normal);
+
+        // Debug Sample (Removed as it's now per-mesh)
+        // if (pos.count > 0) {
+        //     const testV = new THREE.Vector3().fromBufferAttribute(pos, 0).applyMatrix4(worldMatrix);
+        //     console.log('[Section] Sample Vertex (World):', testV);
+        //     console.log('[Section] Dist to Plane:', plane.distanceToPoint(testV));
+        // }
+
+        const lines = [];
+        const vA = new THREE.Vector3();
+        const vB = new THREE.Vector3();
+        const vC = new THREE.Vector3();
+        this._debugCoplanarCount = 0;
+
+        const processTriangle = (pos, index, matrixWorld) => {
+            const count = index ? index.count : pos.count;
+            if (count === 0) return;
+
+            // Pre-allocate reused vectors? We use closure vars vA, vB, vC.
+
+            const checkTri = (aIdx, bIdx, cIdx) => {
+                vA.fromBufferAttribute(pos, aIdx).applyMatrix4(matrixWorld);
+                vB.fromBufferAttribute(pos, bIdx).applyMatrix4(matrixWorld);
+                vC.fromBufferAttribute(pos, cIdx).applyMatrix4(matrixWorld);
+
+                const dA = plane.distanceToPoint(vA);
+                const dB = plane.distanceToPoint(vB);
+                const dC = plane.distanceToPoint(vC);
+
+                // Robust check with Epsilon
+                const eps = 0.001;
+
+                // Trivial Reject
+                if (dA > eps && dB > eps && dC > eps) return;
+                if (dA < -eps && dB < -eps && dC < -eps) return;
+
+                const sign = (val) => val > eps ? 1 : (val < -eps ? -1 : 0);
+                const sA = sign(dA);
+                const sB = sign(dB);
+                const sC = sign(dC);
+
+                if (sA === sB && sB === sC && sA !== 0) return;
+
+                // Coplanar
+                if (Math.abs(dA) <= eps && Math.abs(dB) <= eps && Math.abs(dC) <= eps) {
+                    const area = vA.distanceTo(vB) + vB.distanceTo(vC) + vC.distanceTo(vA); // heuristic perimeter
+                    if (area < eps) return;
+
+                    if (this._debugCoplanarCount < 5) {
+                        console.log('[Section] Found Coplanar Triangle!', dA, dB, dC);
+                        this._debugCoplanarCount = (this._debugCoplanarCount || 0) + 1;
+                    }
+
+                    lines.push({ start: vA.clone(), end: vB.clone() });
+                    lines.push({ start: vB.clone(), end: vC.clone() });
+                    lines.push({ start: vC.clone(), end: vA.clone() });
+                    return;
+                }
+
+                // Intersect
+                const points = [];
+                // AB
+                if (sA !== sB) points.push(vA.clone().lerp(vB, dA / (dA - dB)));
+                // BC
+                if (sB !== sC) points.push(vB.clone().lerp(vC, dB / (dB - dC)));
+                // CA
+                if (sC !== sA) points.push(vC.clone().lerp(vA, dC / (dC - dA)));
+
+                if (points.length >= 2) {
+                    // Start/End
+                    lines.push({ start: points[0], end: points[1] });
+                }
+            };
+
+            if (index) {
+                for (let i = 0; i < index.count; i += 3) {
+                    checkTri(index.getX(i), index.getX(i + 1), index.getX(i + 2));
+                }
+            } else {
+                for (let i = 0; i < pos.count; i += 3) {
+                    checkTri(i, i + 1, i + 2);
+                }
+            }
+        };
+
+        // Iterate all target meshes
+        targetMeshes.forEach(mesh => {
+            const geo = mesh.geometry;
+            if (!geo) return;
+            const pos = geo.attributes.position;
+            if (!pos) return;
+            const index = geo.index;
+            const mat = mesh.matrixWorld;
+
+            processTriangle(pos, index, mat);
+        });
+
+        console.log(`[Section] Found ${lines.length} intersection segments.`);
+
+        if (lines.length === 0) {
+            if (isCopy) this.app.updateStatus('No intersection found at this offset.');
+            return [];
+        }
+
+        if (!isCopy) return lines; // Return raw data for Cap generation
+
+        // Convert to clipboard format
+        const entities = lines.map(line => {
+            // Create Fake Entity
+            const entity = {
+                type: 'LINE',
+                startPoint: { x: line.start.x, y: line.start.y, z: line.start.z },
+                endPoint: { x: line.end.x, y: line.end.y, z: line.end.z },
+                layer: 'SECTION_CUT',
+                color: 0xFFFFFF // White for section cut
+            };
+            // ... (rest of entity creation) ...
+            return entity; // Changed map logic slightly to simplify just for clipboard?
+            // Wait, previous code returned lineObj.
+        });
+
+        // Re-implement mapping fully to avoid errors
+        const clipEntities = lines.map(line => {
+            const entity = {
+                type: 'LINE',
+                startPoint: { x: line.start.x, y: line.start.y, z: line.start.z },
+                endPoint: { x: line.end.x, y: line.end.y, z: line.end.z },
+                layer: 'SECTION_CUT',
+                color: 0xFFFFFF
+            };
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([line.start, line.end]);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xFFFFFF });
+            const lineObj = new THREE.Line(lineGeo, lineMat);
+            lineObj.userData = { type: 'LINE', entity: entity, layer: 'SECTION_CUT', originalColor: 0xFFFFFF };
+            return lineObj;
+        });
+
+        // Copy
+        this.app.clipboardManager.copy(clipEntities);
+        this.app.updateStatus(`Copied ${lines.length} segments to clipboard.`);
+        return lines;
+
+        if (this.app.languageManager) {
+            this.app.updateStatus(`Copied ${entities.length} section lines to clipboard.`);
+        } else {
+            this.app.updateStatus(`Copied ${entities.length} section lines.`);
+        }
     }
 }

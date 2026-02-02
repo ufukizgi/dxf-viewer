@@ -15,7 +15,7 @@ export const translations = {
         "loadingDXF": "DXF dosyası yükleniyor...",
         "errorLoading": "DXF yüklenirken hata: ",
         "loadedInfo": "{count} varlık, {layers} katman yüklendi",
-        "appSubtitle": "Ekstrüzyon için özelleştirilmiş, açık kaynak 2D CAD Görüntüleyici",
+        "appSubtitle": "Ekstrüzyon için özelleştirilmiş, açık kaynak 2D/3D CAD Görüntüleyici",
         "newFileDesc": "Boş bir dosya oluştur",
         "uploadFileDesc": "DWG/DXF dosyasını yükleyin",
         "sidebarTitle": "Özellikler",
@@ -179,7 +179,10 @@ export const translations = {
         "clearAll": "TÜMÜNÜ TEMİZLE",
         "copiedToClipboard": "Panoya kopyalandı",
         "closeClipboard": "Panoyu Kapat",
-        "valuesLogged": "Değerler konsola yazdırıldı"
+        "valuesLogged": "Değerler konsola yazdırıldı",
+        "createSection": "Kesit Oluştur",
+        "copySectionProfile": "Kesit Profilini Kopyala",
+        "flipSection": "Yönü Çevir"
     },
     en: {
         // Header / File
@@ -189,7 +192,7 @@ export const translations = {
         "loadingDXF": "Loading DXF file...",
         "errorLoading": "Error loading DXF: ",
         "loadedInfo": "Loaded {count} entities, {layers} layers",
-        "appSubtitle": "Extrusion-optimized, open-source 2D CAD Viewer",
+        "appSubtitle": "Extrusion-optimized, open-source 2D/3D CAD Viewer",
         "newFileDesc": "Create an empty file",
         "uploadFileDesc": "Upload a DWG/DXF file",
         "sidebarTitle": "Properties",
@@ -349,7 +352,10 @@ export const translations = {
         "clearAll": "CLEAR ALL",
         "copiedToClipboard": "Copied to clipboard",
         "closeClipboard": "Close Clipboard",
-        "valuesLogged": "Values logged to console"
+        "valuesLogged": "Values logged to console",
+        "createSection": "Create Section",
+        "copySectionProfile": "Copy Section Profile",
+        "flipSection": "Flip Direction"
     }
 };
 

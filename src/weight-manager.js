@@ -833,18 +833,92 @@ export class WeightManager {
             child.userData.placementRotation = this.templateRotation; // Store rotation for record
 
             // Verify entity metadata exists for SnappingManager
-            if (!child.userData.entity) {
-                // Try to recover basic entity data if missing
-                if (child.isLine) {
-                    // Start/End from geometry
-                    if (child.geometry && child.geometry.attributes.position) {
-                        const pos = child.geometry.attributes.position;
-                        child.userData.entity = {
-                            type: 'LINE',
-                            startPoint: { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) },
-                            endPoint: { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) }
-                        };
-                    }
+            // AND Update Entity Coordinates to Match World Transform
+            // The object geometry is already in correct place relative to parent.
+            // But userData.entity still has original coordinates.
+            // We must update userData.entity to match the new visual placement.
+
+            // Note: child.matrix is local transform relative to NEW parent (dxfGroup).
+            // Since we used attach, child.position/rotation/scale are set correctly relative to dxfGroup.
+            // If we want userData.entity (which represents absolute world coords usually, or local to dxfGroup?)
+            // to match, we need to apply child.matrix to the original entity points.
+
+            // However, userData.entity from Clipboard is based on ORIGINAL coordinates.
+            // child.matrix handles the shift from FloatingGroup (centered) to DxfGroup.
+            // Wait: 
+            // 1. Original Entity: (1000, 1000)
+            // 2. Clipboard Object: created at (1000, 1000)
+            // 3. Floating Group: added object.
+            // 4. Floating Center calculated. Object shifted by -Center.
+            // 5. Floating Group moved to mouse.
+            // 6. Merge: Object attached to DxfGroup.
+            //    Three.js updates child.matrix to preserve World Position.
+            //    So child.position is now correct in DxfGroup space.
+
+            // PROBLEM: userData.entity.startPoint is still (1000, 1000).
+            // But visual line is at Mouse (e.g. 50, 50).
+            // WeightManager calculations use userData.entity if available.
+            // So we must update userData.entity points to match child.position (if Line) or transform them.
+
+            if (child.userData.entity && (child.userData.entity.type === 'LINE' || child.userData.entity.type === 'LWPOLYLINE')) {
+                // Deep clone entity to avoid reference issues
+                const newEntity = JSON.parse(JSON.stringify(child.userData.entity));
+
+                // We need to determine the transformation logic.
+                // The geometry vertices are ALREADY correct because 'attach' modifies the object transform, NOT the geometry vertices?
+                // Wait, 'attach' modifies object.position/rotation/scale. Geometry is unchanged.
+                // So Geometry is still at (1000, 1000) relative to Object Origin.
+                // Object Origin is at (X, Y) relative to Parent.
+
+                // ACTUALLY:
+                // When we 'attach', the Object Matrix is updated.
+                // The VISUAL state is correct.
+                // Bat WeightManager/InfoManager often look at `entity.startPoint`.
+                // If we want `entity.startPoint` to match the VISUAL start point in World Space (or Parent Space?):
+                // We should probably rely on Geometry Vertices + Object Matrix for robust calc.
+                // BUT most existing code might rely on `entity` structure (e.g. for simple parsing).
+
+                // If we want to "bake" the transform into the entity data:
+                // We can't easily bake it into Geometry unless we applyMatrix to geometry.
+                // If we applyMatrix to geometry, we reset Position/Rotation/Scale to identity.
+
+                // Let's try applying the transform to the geometry and resetting the object transform.
+                // This makes "userData.entity" updates easier too.
+
+                child.updateMatrix();
+                child.geometry.applyMatrix4(child.matrix);
+                child.position.set(0, 0, 0);
+                child.rotation.set(0, 0, 0);
+                child.scale.set(1, 1, 1);
+                child.updateMatrix();
+
+                // Now update entity data from the new geometry
+                if (newEntity.type === 'LINE') {
+                    const pos = child.geometry.attributes.position;
+                    newEntity.startPoint = { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) };
+                    newEntity.endPoint = { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) };
+                }
+                // Polyline is harder (points array), but similar logic.
+
+                child.userData.entity = newEntity;
+            } else if (child.isLine && !child.userData.entity) {
+                // Recover entity from geometry (which we just verified/baked?)
+                // If we baked above, we should do it here too logic-wise.
+                // Simple fallback:
+                if (child.geometry && child.geometry.attributes.position) {
+                    child.updateMatrix();
+                    child.geometry.applyMatrix4(child.matrix);
+                    child.position.set(0, 0, 0);
+                    child.rotation.set(0, 0, 0);
+                    child.scale.set(1, 1, 1);
+                    child.updateMatrix();
+
+                    const pos = child.geometry.attributes.position;
+                    child.userData.entity = {
+                        type: 'LINE',
+                        startPoint: { x: pos.getX(0), y: pos.getY(0), z: pos.getZ(0) },
+                        endPoint: { x: pos.getX(1), y: pos.getY(1), z: pos.getZ(1) }
+                    };
                 }
             }
 
@@ -1134,6 +1208,12 @@ export class WeightManager {
             if (this.templateGroup) {
                 this.viewer.scene.remove(this.templateGroup);
                 this.templateGroup = null;
+            }
+
+            // Remove floating group (Clipboard/Selection content)
+            if (this.floatingGroup) {
+                this.viewer.scene.remove(this.floatingGroup);
+                this.floatingGroup = null;
             }
 
             // Restore original visibility

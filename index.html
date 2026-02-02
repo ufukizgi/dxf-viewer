@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DXF Viewer - Professional CAD Viewer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/occt-import-js@0.0.23/dist/occt-import-js.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -62,7 +63,8 @@
                             <span data-i18n="templates">Templates</span>
                         </button>
                     </div>
-                    <input type="file" id="file-input" accept=".dxf,.dwg,.pdf" hidden>
+                    <input type="file" id="file-input"
+                        accept=".dxf,.dwg,.pdf,.stp,.step,.iges,.igs,.stl,.obj,.gltf,.glb" hidden>
                 </div>
 
                 <!-- Download Button -->
@@ -668,8 +670,8 @@
                                         <h3 class="text-xl font-semibold text-white mb-2" data-i18n="uploadFile">Open
                                             File
                                         </h3>
-                                        <p class="text-sm text-gray-400" data-i18n="uploadFileDesc">Open local DXF, DWG
-                                            or PDF files</p>
+                                        <p class="text-sm text-gray-400" data-i18n="uploadFileDesc">Open DXF, DWG, PDF,
+                                            STP, STL, OBJ...</p>
                                     </div>
                                 </label>
 

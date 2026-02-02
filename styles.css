@@ -1065,3 +1065,25 @@ select option {
 #clipboard-list {
     max-height: none !important;
 }
+
+/* Selection Box */
+.selection-box {
+    position: fixed;
+    border: 1px solid white;
+    background-color: rgba(255, 255, 255, 0.1);
+    pointer-events: none;
+    z-index: 9999;
+}
+
+.selection-box.window {
+    border-color: #00d9ff;
+    /* Blue */
+    background-color: rgba(0, 217, 255, 0.1);
+}
+
+.selection-box.crossing {
+    border-color: #10b981;
+    /* Green */
+    background-color: rgba(16, 185, 129, 0.1);
+    border-style: dashed;
+}

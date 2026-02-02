@@ -106,8 +106,18 @@ export class ClipboardManager {
     }
 
     serializeObjects(objects) {
-        return objects.map(obj => {
+        const serialized = [];
+        objects.forEach(obj => {
             const userData = obj.userData;
+
+            // Handle Smart Selection (Mesh Face)
+            if (obj.isMesh && !userData.entity) { // Assuming generated meshes don't have 'entity' yet?
+                // Or check userData.isSmartSelection?
+                // If it's a Mesh, we try to extract edges.
+                const extracted = this.extract2DEntitiesFromFace(obj);
+                serialized.push(...extracted);
+                return;
+            }
 
             // Determine correct color (Original if selected/highlighted, else current)
             let color = obj.material.color.getHex();
@@ -120,13 +130,14 @@ export class ClipboardManager {
                 }
             }
 
-            return {
+            serialized.push({
                 type: userData.type,
                 layer: userData.layer,
                 entity: userData.entity,
                 color: color
-            };
+            });
         });
+        return serialized;
     }
 
     generateThumbnail(objects) {
@@ -382,6 +393,71 @@ export class ClipboardManager {
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>`;
+    }
+
+    extract2DEntitiesFromFace(object) {
+        // Similar to ObjectInfoManager.handleExtractFace but returns data structure for serialization
+        const geometry = object.geometry;
+        if (!geometry) return [];
+
+        const edges = new THREE.EdgesGeometry(geometry, 10);
+        const positions = edges.attributes.position;
+
+        // Compute Face Normal for Flattening
+        geometry.computeVertexNormals();
+        const normalAttribute = geometry.attributes.normal;
+        const normal = new THREE.Vector3(0, 0, 1);
+        if (normalAttribute && normalAttribute.count > 0) {
+            normal.set(normalAttribute.getX(0), normalAttribute.getY(0), normalAttribute.getZ(0));
+            normal.applyMatrix3(new THREE.Matrix3().getNormalMatrix(object.matrixWorld)).normalize();
+        }
+
+        // Quaternion to rotate Normal to Z-axis (Flatten)
+        const targetNormal = new THREE.Vector3(0, 0, 1);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(normal, targetNormal);
+
+        const entities = [];
+        for (let i = 0; i < positions.count; i += 2) {
+            const v1 = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i));
+            const v2 = new THREE.Vector3(positions.getX(i + 1), positions.getY(i + 1), positions.getZ(i + 1));
+
+            // Apply Object Matrix (World Space)
+            v1.applyMatrix4(object.matrixWorld);
+            v2.applyMatrix4(object.matrixWorld);
+
+            // Apply Flattening Rotation
+            v1.applyQuaternion(quaternion);
+            v2.applyQuaternion(quaternion);
+
+            // Determine correct color
+            let color = 0xFFFFFF;
+            if (object.userData.originalColor) {
+                if (object.userData.originalColor.isColor) {
+                    color = object.userData.originalColor.getHex();
+                } else if (typeof object.userData.originalColor === 'number') {
+                    color = object.userData.originalColor;
+                }
+            } else if (object.material && object.material.color) {
+                // Fallback to current color if no original, but check if it's the selection color (Cyan 0x00d9ff)
+                const hex = object.material.color.getHex();
+                if (hex !== 0x00d9ff) {
+                    color = hex;
+                }
+            }
+
+            // Create Entity Data
+            entities.push({
+                type: 'LINE',
+                layer: '0',
+                entity: {
+                    type: 'LINE',
+                    startPoint: { x: v1.x, y: v1.y, z: 0 }, // Flattened to Z=0
+                    endPoint: { x: v2.x, y: v2.y, z: 0 }
+                },
+                color: color
+            });
+        }
+        return entities;
     }
 
     clear() {

@@ -133,8 +133,31 @@ export class TabManager {
         };
 
         this.tabs.push(tabState);
+
+        // If we are creating an EMPTY new tab, we must ensure the VIEWER is cleared
+        // The viewer.dxfGroup is assigned in switchToTab, but if viewer has existing content, it might persist?
+        // switchToTab handles clearing:
+        // if (this.viewer.dxfGroup) this.viewer.scene.remove(this.viewer.dxfGroup);
+        // this.viewer.dxfGroup = newTab.dxfGroup;
+
         this.renderTabBar();
         this.switchToTab(id);
+
+        // Explicitly clear viewer if new tab is empty??
+        // newTab.dxfGroup is empty Group.
+        // switchToTab sets viewer.dxfGroup = empty group.
+        // So viewer should be empty.
+
+        // Issue might be: User creates "New File", then drag-drops content.
+        // Or Start Page hiding logic?
+
+        // Let's ensure Camera is reset for "New File"
+        if (!file && !dxfData) {
+            // Reset Camera to default Top View for this new tab
+            // Camera will be set properly when switchToTab is called
+            tabState.cameraState.position.set(0, 0, 50);
+            tabState.cameraState.target.set(0, 0, 0);
+        }
 
         // If dxfData is provided (from file load), populate it
         if (dxfData) {
@@ -226,6 +249,7 @@ export class TabManager {
 
         // 2. Set new group
         this.viewer.dxfGroup = newTab.dxfGroup;
+        this.viewer.dxfGroup.visible = true; // Ensure visible
         this.viewer.scene.add(this.viewer.dxfGroup);
 
         // Restore Measurements
@@ -255,6 +279,22 @@ export class TabManager {
         // Trigger status update
         if (this.app.updateStatus) {
             this.app.updateStatus(`Switched to ${newTab.name}`);
+        }
+
+        // Cancel any active placement/weight manager operations to Isolate Tab Context
+        if (this.app.weightManager) {
+            // Cancel persistent selection mode (if active)
+            if (this.app.weightManager.isActive) {
+                this.app.weightManager.toggleActive(); // Turn off
+            }
+            // Cancel template/paste placement mode (floating objects)
+            if (this.app.weightManager.templateMode) {
+                // If we have an exit method, use it.
+                // Assuming exitTemplatePlacementMode exists and takes 'cancel' bool
+                if (typeof this.app.weightManager.exitTemplatePlacementMode === 'function') {
+                    this.app.weightManager.exitTemplatePlacementMode(true);
+                }
+            }
         }
 
         // Handle "Help Overlay" visibility (only show on empty new tab?)

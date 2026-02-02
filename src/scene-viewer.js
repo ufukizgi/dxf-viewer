@@ -27,27 +27,57 @@ export class SceneViewer {
             antialias: true,
             preserveDrawingBuffer: true // For screenshots
         });
+        this.renderer.localClippingEnabled = true;
         this.renderer.setSize(canvas.clientWidth, canvas.clientHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 
         // Controls
         this.controls = new OrbitControls(this.camera, canvas);
-        this.controls.enableRotate = false; // Default to 2D view (Pan/Zoom only)
+        this.controls.enableRotate = true; // Use right click to rotate
         this.controls.enableZoom = false; // Using custom wheel handler
         this.controls.enablePan = true;
         this.controls.mouseButtons = {
-            LEFT: THREE.MOUSE.ROTATE, // Disable Pan on Left. Rotate or None? Set to Rotate or generic to free it up? Actually if I want custom drag, I might need to prevent OrbitControls from consuming it.
-            // Setting LEFT to null or undefined might not work well with OrbitControls types.
-            // Let's set it to valid, but we will intercept events first?
-            // Actually, best to set LEFT to THREE.MOUSE.ROTATE (Right click usually) or keep PAN on Middle.
-            // Let's set LEFT: null if possible, or handling manually.
-            // Common trick: Set LEFT to Rotate (which is disabled via enableRotate=false).
-            LEFT: THREE.MOUSE.ROTATE,
-            MIDDLE: THREE.MOUSE.PAN,
-            RIGHT: THREE.MOUSE.PAN // Backup Pan?
+            LEFT: THREE.MOUSE.PAN,      // Left Pan (standard 2D/CAD usually Pan) or Select?
+            MIDDLE: THREE.MOUSE.DOLLY,  // Zoom
+            RIGHT: THREE.MOUSE.ROTATE   // Right Rotate
         };
-        // Ensure Rotate is disabled so Left Drag does nothing in OrbitControls
-        this.controls.enableRotate = false;
+        // Override for standard CAD feel:
+        // Left: Select (Raycast handled by event listener, Orbit doesn't block unless dragging)
+        // Middle: Pan
+        // Right: Rotate
+
+        // Let's implement User Request: "Rotate mouse wheel + right click"
+        // This is tricky. usually implies simultaneous.
+        // Or maybe they mean "Mouse Wheel" (Middle) AND "Right Click" separately?
+        // "Rotate mouse wheel + right click" -> maybe Middle OR Right?
+
+        this.controls.mouseButtons = {
+            LEFT: null, // Left click/drag handled by custom listeners (Selection)
+            MIDDLE: THREE.MOUSE.PAN, // Middle Pan
+            RIGHT: null // Right Click Disabled
+        };
+
+        // Dynamic Middle Mouse Button Mode (Shift+Middle = Rotate)
+        // Using capture to ensure we update config before OrbitControls handles the event
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 1) { // Middle Button
+                if (e.shiftKey) {
+                    this.controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+                } else {
+                    this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+                }
+            }
+        }, true);
+
+        // We initially disable rotate for 2D feel, but will enable it if 3D content loaded?
+        // Or just leave it enabled. 
+        // For DXF (2D), rotation is annoying. 
+        this.controls.enableRotate = true;
+        this.controls.listenToKeyEvents(window); // Enable standard keys if needed
+
+        // Adjust defaults
+        this.controls.screenSpacePanning = true;
+
         // this.controls.zoomSpeed = 1.2;
 
         // Custom Wheel Zoom
@@ -60,6 +90,24 @@ export class SceneViewer {
         // Group to hold DXF entities
         this.dxfGroup = new THREE.Group();
         this.scene.add(this.dxfGroup);
+
+        // Lighting
+        // Use a "Headlamp" approach so the model is always lit from the front
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        this.scene.add(ambientLight);
+
+        const headLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        headLight.position.set(0, 0, 1); // Relative to camera
+        this.camera.add(headLight); // Add light to camera
+        this.scene.add(this.camera); // Add camera to scene (required for child lights)
+
+        // Additional fixed light for depth
+        const topLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        topLight.position.set(100, 500, 100);
+        this.scene.add(topLight);
+
+        // Prevent Context Menu on canvas for OrbitControls Right Click
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
         // Selection / Helpers
         this.raycaster = new THREE.Raycaster();
@@ -103,7 +151,9 @@ export class SceneViewer {
         this.dxfGroup.add(entity);
     }
 
-    setEntities(group) {
+    setEntities(group, type = 'dxf') {
+        this._lastLoadedType = type;
+
         // Clear existing
         this.clear();
 
@@ -119,6 +169,13 @@ export class SceneViewer {
     }
 
     clear() {
+        // Reset Clipping
+        this.renderer.clippingPlanes = [];
+        if (this.sectionHelper) {
+            this.scene.remove(this.sectionHelper);
+            this.sectionHelper = null;
+        }
+
         // Remove all children from DXF groups efficiently
         while (this.dxfGroup.children.length > 0) {
             const object = this.dxfGroup.children[0];
@@ -164,7 +221,41 @@ export class SceneViewer {
         this.camera.top = fitHeight / 2;
         this.camera.bottom = -fitHeight / 2;
 
-        this.camera.position.set(center.x, center.y, 1000);
+        // Camera Position and Orientation
+        // User Request: 
+        // 1. 2D should be Standard Top View (No Iso)
+        // 2. 3D should be Isometric "Top Right" (Upper Right)
+
+        let is3D = false;
+        if (this._lastLoadedType === 'model') {
+            is3D = true;
+        } else {
+            // Heuristic: Check Z bounds
+            if (size.z > 0.1) is3D = true;
+        }
+
+        const dist = 1000;
+
+        if (is3D) {
+            // Isometric Top-Right: Look from positive X, Y, Z towards Center
+            // Z is typically up in CAD, but usually file coords are arbitrary.
+            // If we assume Y-up (Three.js default world), then Isometric is usually (1, 1, 1) or (1, -1, 1).
+            // User said "Upper Right" (Top Right).
+            // Let's try (1, 1, 1).
+
+            const isoDir = new THREE.Vector3(1, 1, 1).normalize();
+            this.camera.position.copy(center).add(isoDir.multiplyScalar(dist * 2)); // Zoom out (Double distance)
+            this.camera.lookAt(center);
+        } else {
+            // 2D Standard Top View (Z-up typically means viewing from +Z?)
+            // If viewer is Y-up, Top View is viewing from +Y?
+            // Existing code was (0,0,1000) which is +Z.
+            // Let's stick to standard +Z view for 2D.
+            this.camera.position.set(center.x, center.y, dist);
+            this.camera.lookAt(center.x, center.y, 0);
+            this.camera.rotation.set(0, 0, 0);
+        }
+
         this.controls.target.copy(center);
 
         this.camera.updateProjectionMatrix();
@@ -218,7 +309,7 @@ export class SceneViewer {
     raycast(pointer) {
         this.raycaster.setFromCamera(pointer, this.camera);
         // Raycast against lines. Precision threshold in world units
-        // Screen space threshold approx 10px
+        // Screen space threshold approx 6px
         const worldThreshold = 6 * this.getWorldPerPixel();
         this.raycaster.params.Line.threshold = worldThreshold;
 
