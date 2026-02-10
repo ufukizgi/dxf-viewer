@@ -1675,7 +1675,7 @@ export class MeasurementManager {
         const prefix = (type === 'radius') ? 'R' : 'Ø';
         const textStr = prefix + valScaled.toFixed(2);
 
-        group.userData = { type: 'DIMENSION', value: textStr, isPreview: isPreview };
+        group.userData = { type: 'DIMENSION', value: textStr, isPreview: isPreview, isUserDefined: !isPreview };
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
         const color = material.color;
 

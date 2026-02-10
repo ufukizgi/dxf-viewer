@@ -743,7 +743,7 @@ class DXFViewerApp {
     }
 
     onClick(e) {
-        if (this.measurementManager && this.measurementManager.activeTool) {
+        if (this.measurementManager && this.measurementManager.activeTool && this.measurementManager.activeTool !== 'area') {
             const rect = this.canvas.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
             const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -772,25 +772,7 @@ class DXFViewerApp {
             return;
         }
 
-        // Single Selection Mode (No Tool Active)
-        if (!this.measurementManager || !this.measurementManager.activeTool) {
-            const rect = this.canvas.getBoundingClientRect();
-            const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-            const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-            const pointer = new THREE.Vector2(x, y);
 
-            const intersects = this.viewer.raycast(pointer);
-            if (intersects.length > 0) {
-                const intersect = intersects[0];
-                this.handleObjectSelection(intersect, e.ctrlKey || e.shiftKey); // Support multi-select
-            } else {
-                // Click on empty space -> Clear selection
-                if (!e.ctrlKey && !e.shiftKey) {
-                    this.clearSelection();
-                }
-            }
-            return;
-        }
 
         // Area Tool (Visible Surface)
         if (this.measurementManager && this.measurementManager.activeTool === 'area') {
@@ -938,15 +920,22 @@ class DXFViewerApp {
             }
             if (!isMeasurement && hit.userData.type === 'DIMENSION') target = hit;
 
-            // Toggle Selection
-            const idx = this.selectedObjects.indexOf(target);
-
-            if (idx > -1) {
-                this.viewer.highlightObject(target, false);
-                this.selectedObjects.splice(idx, 1);
-            } else {
+            // Toggle Selection Logic (Single vs Multi)
+            if (!e.ctrlKey && !e.shiftKey) {
+                // Single Select: Clear others, Select Target
+                this.clearSelection();
                 this.viewer.highlightObject(target, true);
                 this.selectedObjects.push(target);
+            } else {
+                // Multi Select (Ctrl/Shift): Toggle Target
+                const idx = this.selectedObjects.indexOf(target);
+                if (idx > -1) {
+                    this.viewer.highlightObject(target, false);
+                    this.selectedObjects.splice(idx, 1);
+                } else {
+                    this.viewer.highlightObject(target, true);
+                    this.selectedObjects.push(target);
+                }
             }
 
             // Pass the original hit intersection to ObjectInfoManager if single selection

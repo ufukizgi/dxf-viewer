@@ -298,9 +298,19 @@ export class WeightManager {
         if (this.btn) {
             if (this.isEnabled) {
                 this.btn.classList.remove('opacity-50', 'cursor-not-allowed', 'group-is-disabled');
+
+                // Show panel if it was active
+                if (this.isActive && this.gapTolerancePanel) {
+                    this.gapTolerancePanel.classList.remove('hidden');
+                }
                 this.btn.classList.add('hover:bg-white/10');
             } else {
                 this.btn.classList.add('opacity-50', 'cursor-not-allowed', 'group-is-disabled');
+
+                // FORCE HIDE panel if disabled
+                if (this.gapTolerancePanel) {
+                    this.gapTolerancePanel.classList.add('hidden');
+                }
                 this.btn.classList.remove('hover:bg-white/10');
             }
         }

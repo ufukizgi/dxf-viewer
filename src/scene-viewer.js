@@ -229,9 +229,11 @@ export class SceneViewer {
         let is3D = false;
         if (this._lastLoadedType === 'model') {
             is3D = true;
-        } else {
-            // Heuristic: Check Z bounds
-            if (size.z > 0.1) is3D = true;
+        }
+        // Force 2D (Top View) for DXF files regardless of Z values
+        // This prevents isometric view on "2.5D" drawings or drawings with noisy Z data
+        else {
+            is3D = false;
         }
 
         const dist = 1000;

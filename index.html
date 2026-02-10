@@ -32,6 +32,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     -->
 
+
+    <!-- Buffer Polyfill for DXF Parser -->
+    <script src="./libs/buffer.js"></script>
+    <script>
+        // Expose Buffer globally for libraries that need it (like dxf-parser)
+        if (typeof window.Buffer === 'undefined') {
+            if (window.buffer && window.buffer.Buffer) {
+                window.Buffer = window.buffer.Buffer;
+            } else {
+                console.warn('Buffer library loaded but window.buffer.Buffer not found');
+            }
+        }
+    </script>
+
     <script type="importmap">
         {
             "imports": {
