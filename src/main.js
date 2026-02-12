@@ -3,7 +3,7 @@ import { SceneViewer } from './scene-viewer.js';
 import { LoaderManager } from './loaders/LoaderManager.js';
 import { LanguageManager } from './localization.js';
 import { SnappingManager } from './snapping-manager.js';
-import { MeasurementManager } from './measurement-manager.js';
+import { MeasurementManager } from './measurement-manager.js?v=0.1';
 import { ObjectInfoManager } from './object-info-manager.js';
 import { WeightManager } from './weight-manager.js';
 import { CommandHistory } from './command-history.js';
@@ -744,6 +744,7 @@ class DXFViewerApp {
 
     onClick(e) {
         if (this.measurementManager && this.measurementManager.activeTool && this.measurementManager.activeTool !== 'area') {
+
             const rect = this.canvas.getBoundingClientRect();
             const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
             const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;

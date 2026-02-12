@@ -1,5 +1,6 @@
 
 import * as THREE from 'three';
+console.log('[MeasurementManager] File Loaded: Version TESTING');
 
 export class MeasurementManager {
     constructor(viewer, snappingManager, onStatusUpdate, onMeasurementAdded) {
@@ -259,40 +260,84 @@ export class MeasurementManager {
         }
 
         if (this.activeTool === 'distance') {
+            const now = Date.now();
+
+            if (this.lastClickTime && (now - this.lastClickTime < 300)) {
+                return;
+            }
+
             if (this.points.length === 0) {
+                // Step 1: Start Point
                 this.points.push(point);
                 this.activeScale = 1.0;
                 let targetObj = hitObject;
                 if (!targetObj && this.snappingManager && this.snappingManager.activeSnap) {
                     targetObj = this.snappingManager.activeSnap.object;
                 }
-                if (targetObj) {
+
+                if (targetObj && targetObj.userData) {
                     if (targetObj.userData.placementScale) this.activeScale = targetObj.userData.placementScale;
                     else if (targetObj.userData.templateScale) this.activeScale = targetObj.userData.templateScale;
-                    else if (targetObj.parent && targetObj.parent.userData.placementScale) this.activeScale = targetObj.parent.userData.placementScale;
+                    else if (targetObj.parent && targetObj.parent.userData && targetObj.parent.userData.placementScale) {
+                        this.activeScale = targetObj.parent.userData.placementScale;
+                    }
                 }
+
+                this.onStatusUpdate(`Selected Distance. Step 2: Click end point.`);
+                this.lastClickTime = now;
+
             } else if (this.points.length === 1) {
-                if (this.points[0].distanceTo(point) < 0.001) return;
+                // Step 2: End Point
+                if (this.points[0].distanceTo(point) < 0.001) {
+                    return;
+                }
                 this.points.push(point);
+                this.onStatusUpdate(`Step 3: Move mouse to position Dimension Line, then Click.`);
+                this.lastClickTime = now;
+
             } else if (this.points.length === 2) {
+                // Step 3: Dimension Line Position
+                this.points.push(point);
+                this.onStatusUpdate(`Step 4: Move mouse to position Text along the line, then Click to finish.`);
+                // Force a longer debounce here to ensure user sees the transition
+                this.lastClickTime = now + 200;
+
+            } else if (this.points.length === 3) {
+                // Step 4: Text Position (Finish)
                 const p1 = this.points[0];
                 const p2 = this.points[1];
-                const placement = point;
-                const state = this.getDimensionState(p1, p2, placement, this.activeScale);
-                const visual = this.createDimensionVisual(state, false);
-                const mData = { type: 'distance', p1, p2, placement, value: state.value, visual, stateType: state.type, scale: this.activeScale };
+                const dimLinePos = this.points[2];
+                const textPos = point;
 
-                if (this.onMeasurementAdded) {
-                    this.onMeasurementAdded(mData);
-                } else {
-                    this.group.add(visual);
-                    this.measurements.push(mData);
-                }
+                // Calculate State with final text position and SCALE
+                const state = this.getDimensionState(p1, p2, dimLinePos, this.activeScale, textPos);
+
+                const measurementData = {
+                    type: 'distance',
+                    points: [p1, p2, dimLinePos, textPos], // Store all 4 points
+                    text: state.text,
+                    value: parseFloat(state.text), // Parse value
+                    visual: null, // assigned below
+                    scale: this.activeScale // Store scale
+                };
+
+                // Create Visual
+                const visual = this.createDimensionVisual(state, false);
+                visual.userData.data = measurementData;
+                measurementData.visual = visual;
+
+                this.measurements.push(measurementData);
+                this.group.add(visual);
+
+                if (this.onMeasurementAdded) this.onMeasurementAdded(measurementData);
+                this.onStatusUpdate('Measurement added.');
+
+                // Reset
                 this.points = [];
+                // Clear temp
                 this.clearTemp();
-                this.activeScale = 1.0;
-                // Cleanup sticky snap
-                if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
+                // Keep tool active
+                this.onStatusUpdate('Ready. Click start point for new measurement.');
             }
         }
 
@@ -415,14 +460,25 @@ export class MeasurementManager {
                 this.group.add(this.tempMeasurement);
 
             } else if (this.points.length === 2) {
-                // Step 3: Placing
+                // Step 3: Placing Dimension Line
                 const p1 = this.points[0];
                 const p2 = this.points[1];
                 const placement = point;
 
                 // Smart Dimension Logic with Scale
+                // textPos is null here, so it defaults to center
                 const state = this.getDimensionState(p1, p2, placement, this.activeScale);
 
+                this.tempMeasurement = this.createDimensionVisual(state, true);
+                this.group.add(this.tempMeasurement);
+            } else if (this.points.length === 3) {
+                // Step 4: Placing Text
+                const p1 = this.points[0];
+                const p2 = this.points[1];
+                const dimLinePos = this.points[2];
+                const textPos = point;
+
+                const state = this.getDimensionState(p1, p2, dimLinePos, this.activeScale, textPos);
                 this.tempMeasurement = this.createDimensionVisual(state, true);
                 this.group.add(this.tempMeasurement);
             }
@@ -694,394 +750,7 @@ export class MeasurementManager {
         return group;
     }
 
-    handleClick(point, intersectOrObject) {
-        if (!this.activeTool) return;
 
-        // Extract Object and Index (if available)
-        let hitObject = intersectOrObject;
-        let hitIndex = null;
-        if (intersectOrObject && intersectOrObject.object) {
-            hitObject = intersectOrObject.object;
-            hitIndex = intersectOrObject.index;
-        }
-
-        // Radius & Diameter Tools (New 3-Step)
-        if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
-            // ... handle existing logic using hitObject ...
-            if (this.points.length === 0) {
-                if (hitObject && hitObject.userData) {
-                    const type = hitObject.userData.type;
-                    if (type === 'CIRCLE' || type === 'ARC') {
-                        const entity = hitObject.userData.entity || hitObject.userData;
-
-                        // Detect Scale
-                        let scale = 1.0;
-                        if (hitObject.userData.placementScale) scale = hitObject.userData.placementScale;
-                        else if (hitObject.userData.templateScale) scale = hitObject.userData.templateScale;
-                        else if (hitObject.parent && hitObject.parent.userData.placementScale) scale = hitObject.parent.userData.placementScale;
-                        else if (hitObject.scale && hitObject.scale.x !== 1) scale = hitObject.scale.x;
-
-                        const center = new THREE.Vector3(entity.center.x, entity.center.y, 0);
-                        // Apply World Matrix to correctly locate the center in World Coordinate Space
-                        center.applyMatrix4(hitObject.matrixWorld);
-
-                        this.currentRadiusEntity = {
-                            center: center,
-                            radius: entity.radius * scale,
-                            type: type
-                        };
-                        this.points.push(center); // P0
-                        console.log(`[Measurement] Selected ${type}. Click to place Arrow.`);
-                        this.onStatusUpdate(`Step 2: Move mouse to position Arrow, then Click.`);
-                    }
-                }
-            }
-            else if (this.points.length === 1) {
-                const center = this.currentRadiusEntity.center;
-                const radius = this.currentRadiusEntity.radius;
-                const v = new THREE.Vector3().subVectors(point, center).normalize();
-                if (v.lengthSq() === 0) v.set(1, 0, 0);
-                const arrowPoint = center.clone().add(v.multiplyScalar(radius));
-                this.points.push(arrowPoint); // P1
-                this.onStatusUpdate(`Step 3: Move mouse to position Text, then Click to finish.`);
-            }
-            else if (this.points.length === 2) {
-                const textPoint = point; // P2
-                this.points.push(textPoint);
-
-                const center = this.currentRadiusEntity.center;
-                const radius = this.currentRadiusEntity.radius;
-                const arrowPoint = this.points[1];
-
-                const visual = this.createSmartRadiusVisual(center, radius, arrowPoint, textPoint, this.activeTool, this.activeScale);
-                const scale = this.activeScale || 1;
-                const val = (this.activeTool === 'radius') ? radius : radius * 2;
-                const valScaled = val / scale;
-
-                const mData = {
-                    type: this.activeTool,
-                    value: valScaled.toFixed(3),
-                    visual: visual
-                };
-
-                if (this.onMeasurementAdded) {
-                    this.onMeasurementAdded(mData);
-                } else {
-                    this.measurements.push(mData);
-                    this.group.add(visual);
-                }
-
-                this.points = [];
-                this.currentRadiusEntity = null;
-                this.clearTemp();
-                console.log(`[Measurement] Finished ${this.activeTool}.`);
-                this.onStatusUpdate(`Finished ${this.activeTool}. Ready for next.`);
-                this.activeTool = this.activeTool;
-                this.onStatusUpdate(`Selected ${this.activeTool}. Step 1: Click on an Arc or Circle.`);
-            }
-            return;
-        }
-
-        if (this.activeTool === 'distance') {
-            // ... existing Distance logic using hitObject ...
-            if (this.points.length === 0) {
-                this.points.push(point);
-                this.activeScale = 1.0;
-                let targetObj = hitObject;
-                if (!targetObj && this.snappingManager && this.snappingManager.activeSnap) {
-                    targetObj = this.snappingManager.activeSnap.object;
-                }
-                if (targetObj) {
-                    if (targetObj.userData.placementScale) this.activeScale = targetObj.userData.placementScale;
-                    else if (targetObj.userData.templateScale) this.activeScale = targetObj.userData.templateScale;
-                    else if (targetObj.parent && targetObj.parent.userData.placementScale) this.activeScale = targetObj.parent.userData.placementScale;
-                }
-            } else if (this.points.length === 1) {
-                if (this.points[0].distanceTo(point) < 0.001) return;
-                this.points.push(point);
-            } else if (this.points.length === 2) {
-                const p1 = this.points[0];
-                const p2 = this.points[1];
-                const placement = point;
-                const state = this.getDimensionState(p1, p2, placement, this.activeScale);
-                const visual = this.createDimensionVisual(state, false);
-                const mData = { type: 'distance', p1, p2, placement, value: state.value, visual, stateType: state.type, scale: this.activeScale };
-
-                if (this.onMeasurementAdded) {
-                    this.onMeasurementAdded(mData);
-                } else {
-                    this.group.add(visual);
-                    this.measurements.push(mData);
-                }
-                this.points = [];
-                this.clearTemp();
-                this.activeScale = 1.0;
-                if (this.snappingManager && this.snappingManager.clearSticky) this.snappingManager.clearSticky();
-            }
-        }
-
-        // Angle Tool
-        if (this.activeTool === 'angle') {
-            const p = point.clone();
-
-            // Mode A: 2-Line Selection (Priority if Object Clicked)
-            const validTypes = ['LINE', 'LWPOLYLINE', 'POLYLINE'];
-
-            if (!this.lineSelection && this.points.length === 0 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
-                // Start Line Selection Mode
-                // Store object, click point AND segment index
-                this.lineSelection = [{ object: hitObject, point: p, index: hitIndex }];
-                console.log("Angle: Line 1 Selected", hitIndex);
-                this.onStatusUpdate('Angle: Line 1 selected. Select Line 2.');
-                return;
-            }
-
-            if (this.lineSelection && this.lineSelection.length === 1 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
-                // Line 2 Selected
-                this.lineSelection.push({ object: hitObject, point: p, index: hitIndex });
-                console.log("Angle: Line 2 Selected", hitIndex);
-
-                // Compute Intersection
-                const sel1 = this.lineSelection[0];
-                const sel2 = this.lineSelection[1];
-                const l1 = sel1.object;
-                const l2 = sel2.object;
-
-                // Robust Helper to get EXACT line segment using Raycast Index
-                const getSegment = (lineObj, clickPoint, segmentIndex) => {
-                    const pos = lineObj.geometry.attributes.position;
-                    // If segmentIndex is valid number, use it!
-                    // Note: Check bounds just in case
-                    if (typeof segmentIndex === 'number' && segmentIndex >= 0 && segmentIndex < pos.count) {
-                        const p1Local = new THREE.Vector3(pos.getX(segmentIndex), pos.getY(segmentIndex), pos.getZ(segmentIndex));
-                        // For LineSegments, i+1. For LineStrip, i+1. 
-                        // Raycaster returns start index of segment.
-                        const idx2 = segmentIndex + 1;
-                        if (idx2 < pos.count) {
-                            const p2Local = new THREE.Vector3(pos.getX(idx2), pos.getY(idx2), pos.getZ(idx2));
-                            p1Local.applyMatrix4(lineObj.matrixWorld);
-                            p2Local.applyMatrix4(lineObj.matrixWorld);
-                            return [p1Local, p2Local];
-                        }
-                    }
-
-                    // Fallback: Closest Segment Logic (if index missing or invalid)
-                    // Copied from previous logic
-                    const isLineSegments = lineObj.isLineSegments;
-                    const cnt = pos.count;
-                    let bestDist = Infinity;
-                    let bestSeg = [new THREE.Vector3(), new THREE.Vector3()];
-                    const stride = isLineSegments ? 2 : 1;
-                    const limit = isLineSegments ? cnt : cnt - 1;
-                    const p1Local = new THREE.Vector3();
-                    const p2Local = new THREE.Vector3();
-                    const p1World = new THREE.Vector3();
-                    const p2World = new THREE.Vector3();
-
-                    for (let i = 0; i < limit; i += stride) {
-                        p1Local.set(pos.getX(i), pos.getY(i), pos.getZ(i));
-                        p2Local.set(pos.getX(i + 1), pos.getY(i + 1), pos.getZ(i + 1));
-
-                        p1World.copy(p1Local).applyMatrix4(lineObj.matrixWorld);
-                        p2World.copy(p2Local).applyMatrix4(lineObj.matrixWorld);
-
-                        const vW = new THREE.Vector3().subVectors(p2World, p1World);
-                        const vP = new THREE.Vector3().subVectors(clickPoint, p1World);
-                        const lenSq = vW.lengthSq();
-                        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, vP.dot(vW) / lenSq));
-                        const proj = p1World.clone().add(vW.multiplyScalar(t));
-                        const dist = proj.distanceToSquared(clickPoint);
-
-                        if (dist < bestDist) {
-                            bestDist = dist;
-                            bestSeg[0].copy(p1World);
-                            bestSeg[1].copy(p2World);
-                        }
-                    }
-                    return bestSeg;
-                };
-
-                const [p1, p2] = getSegment(l1, sel1.point, sel1.index); // Line 1
-                const [p3, p4] = getSegment(l2, sel2.point, sel2.index); // Line 2
-
-                // 2D Intersection (XY Plane)
-                const x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
-                const x3 = p3.x, y3 = p3.y, x4 = p4.x, y4 = p4.y;
-
-                const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
-
-                if (Math.abs(denom) > 1e-9) {
-                    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
-
-                    // Intersection Point (2D)
-                    const ix = x1 + ua * (x2 - x1);
-                    const iy = y1 + ua * (y2 - y1);
-
-                    // Interpolate Z
-                    // Z = Z1 + ua * (Z2 - Z1)
-                    const iz = p1.z + ua * (p2.z - p1.z);
-
-                    const intersection = new THREE.Vector3(ix, iy, iz);
-
-                    // Determine Ends based on Click Side
-                    const vClick1 = new THREE.Vector3().subVectors(sel1.point, intersection);
-                    const vEnd1 = new THREE.Vector3().subVectors(p1, intersection);
-                    const vEnd2 = new THREE.Vector3().subVectors(p2, intersection);
-                    // Use dot product to find which endpoint vector aligns with click vector
-                    const arm1End = vClick1.dot(vEnd1) > vClick1.dot(vEnd2) ? p1 : p2;
-
-                    // Vector from I to Click2
-                    const vClick2 = new THREE.Vector3().subVectors(sel2.point, intersection);
-                    const vEnd3 = new THREE.Vector3().subVectors(p3, intersection);
-                    const vEnd4 = new THREE.Vector3().subVectors(p4, intersection);
-                    const arm2End = vClick2.dot(vEnd3) > vClick2.dot(vEnd4) ? p3 : p4;
-
-                    // Push Points: Center, Arm1End, Arm2End
-                    this.points.push(intersection);
-                    this.points.push(arm1End);
-                    this.points.push(arm2End);
-
-                } else {
-                    console.log("Angle: Lines are parallel");
-                    this.onStatusUpdate('Lines are parallel. Cannot measure angle.');
-                    this.lineSelection = null;
-                    return;
-                }
-
-                this.lineSelection = null;
-                return; // Wait for next click (Placement) which will trigger length===3 block
-            }
-
-            if (this.points.length === 0) this.points.push(p);
-            else if (this.points.length === 1) this.points.push(p);
-            else if (this.points.length === 2) this.points.push(p);
-            else if (this.points.length === 3) {
-                const center = this.points[0], start = this.points[1], end = this.points[2], placement = p;
-                const visual = this.createAngleVisual(center, start, end, placement, false);
-
-                // Calculate Value
-                // Re-calc vectors based on arms
-                const v1 = new THREE.Vector3().subVectors(start, center);
-                const v2 = new THREE.Vector3().subVectors(end, center);
-
-                // Use the visual calculation logic for value if possible, but simplest:
-                // abs(angle) is not enough, we need the visual sector angle.
-                // createAngleVisual returns value in userData.
-                const val = visual.userData.value || "0°";
-
-                const mData = {
-                    type: 'angle',
-                    center, start, end, placement,
-                    value: val.replace('°', ''),
-                    visual
-                };
-
-                if (this.onMeasurementAdded) {
-                    this.onMeasurementAdded(mData);
-                } else {
-                    this.group.add(visual);
-                    this.measurements.push(mData);
-                }
-                this.points = [];
-                this.clearTemp();
-                this.onStatusUpdate(`Angle: ${val}`);
-            }
-        }
-
-        // Radius & Diameter Tools
-        if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
-            if (hitObject && hitObject.userData) {
-                const type = hitObject.userData.type;
-                if (type === 'CIRCLE' || type === 'ARC') {
-                    const entity = hitObject.userData.entity || hitObject.userData; // Robust check
-                    const center = new THREE.Vector3(entity.center.x, entity.center.y, 0);
-                    const radius = entity.radius;
-
-                    if (this.activeTool === 'radius') {
-                        const visual = this.createRadiusVisual(center, radius, point, this.activeScale);
-                        this.group.add(visual);
-                        this.measurements.push({
-                            type: 'radius',
-                            value: (radius / this.activeScale).toFixed(3),
-                            visual
-                        });
-                        console.log(`Radius Measured: ${radius}`);
-                    } else {
-                        const visual = this.createDiameterVisual(center, radius, point, this.activeScale);
-                        this.group.add(visual);
-                        this.measurements.push({
-                            type: 'diameter',
-                            value: (radius * 2 / this.activeScale).toFixed(3),
-                            visual
-                        });
-                    }
-                    // Reset
-                    this.points = [];
-                    this.clearTemp();
-                } else {
-                    console.log("Not a Circle/Arc");
-                }
-            }
-        }
-    }
-
-    createRadiusVisual(center, radius, clickPoint, scale) {
-        const group = new THREE.Group();
-        const rVal = radius / scale;
-        const text = "R" + rVal.toFixed(2);
-        group.userData = { type: 'DIMENSION', value: text, isPreview: false, isUserDefined: true };
-
-        // Line from Center to Click Point (projected onto max radius if needed, but click on arc implies distance is r)
-        // Actually clickPoint might be slightly off due to picking.
-        // Vector Center -> Click
-        const v = new THREE.Vector3().subVectors(clickPoint, center).normalize();
-        const pEdge = center.clone().add(v.clone().multiplyScalar(radius));
-
-        // Draw line Center -> Edge
-        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([center, pEdge]), this.lineMaterial));
-
-        // Arrow at Edge (pointing out)
-        // Standard Radius: Arrow touches arc from inside.
-        // center ---->| Arc
-        group.add(this.createArrow(pEdge, v, 3.0, this.lineMaterial.color));
-
-        // Text at mid
-        const mid = new THREE.Vector3().addVectors(center, pEdge).multiplyScalar(0.5);
-        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color, group.userData.tolerance);
-        textMesh.position.copy(mid);
-        group.add(textMesh);
-
-        return group;
-    }
-
-    createDiameterVisual(center, radius, clickPoint, scale) {
-        const group = new THREE.Group();
-        const dVal = radius * 2 / scale;
-        const text = "Ø" + dVal.toFixed(2);
-        group.userData = { type: 'DIMENSION', value: text, isPreview: false, isUserDefined: true };
-
-        // Vector Center -> Click
-        const v = new THREE.Vector3().subVectors(clickPoint, center).normalize();
-
-        // Full Diameter Line: Center +/- Radius*V
-        const p1 = center.clone().add(v.clone().multiplyScalar(radius));
-        const p2 = center.clone().sub(v.clone().multiplyScalar(radius));
-
-        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, p2]), this.lineMaterial));
-
-        // Arrows at both ends pointing OUT
-        group.add(this.createArrow(p1, v, 3.0, this.lineMaterial.color));
-        group.add(this.createArrow(p2, v.clone().negate(), 3.0, this.lineMaterial.color)); // Pointing Opposite
-
-        // Text at Center
-        const textMesh = this.createTextMesh(text, 0, this.lineMaterial.color, group.userData.tolerance);
-        textMesh.position.copy(center);
-        // Offset text slightly to not overlap line?
-        textMesh.position.y += 2.0;
-        group.add(textMesh);
-
-        return group;
-    }
 
     showAreaMeasurement(point, value) {
         const group = new THREE.Group();
@@ -1100,7 +769,7 @@ export class MeasurementManager {
         });
     }
 
-    getDimensionState(p1, p2, mouse, scale = 1.0) {
+    getDimensionState(p1, p2, placement, scale = 1.0, fixedTextPos = null) {
         const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
         const dir = new THREE.Vector3().subVectors(p2, p1);
         const len = dir.length();
@@ -1121,8 +790,9 @@ export class MeasurementManager {
         const unitDir = dir.clone().normalize();
         const normal = new THREE.Vector3(-unitDir.y, unitDir.x, 0);
 
-        // Vector Mouse -> Mid
-        const drag = new THREE.Vector3().subVectors(mouse, mid);
+        // Vector Mouse -> Mid to determine orientation
+        // Use 'placement' (Dimension Line placement) for this. 
+        const drag = new THREE.Vector3().subVectors(placement, mid);
 
         // Projections
         const dotH = Math.abs(drag.x); // Pulling horizontal
@@ -1149,10 +819,6 @@ export class MeasurementManager {
                 // dx > dy -> Pulling Side -> Vertical Dimension (measures Y)
                 // dy > dx -> Pulling Up/Down -> Horizontal Dimension (measures X)
 
-                // WAIT! Standard CAD:
-                // Pull Up/Down -> Horizontal Dim (Dimension Line is Horizontal)
-                // Pull Left/Right -> Vertical Dim (Dimension Line is Vertical)
-
                 if (Math.abs(drag.x) > Math.abs(drag.y)) {
                     type = 'vertical';
                 } else {
@@ -1163,21 +829,22 @@ export class MeasurementManager {
         }
 
         // Calculate Geometry based on Type
+        // We establish DimP1 and DimP2 based on 'mouse' (Step 3).
         if (type === 'horizontal') {
             // Measure dx
             val = Math.abs(p2.x - p1.x) / scale;
             angle = 0;
             // Dim Line is at mouse.y
-            dimP1 = new THREE.Vector3(p1.x, mouse.y, 0);
-            dimP2 = new THREE.Vector3(p2.x, mouse.y, 0);
+            dimP1 = new THREE.Vector3(p1.x, placement.y, 0);
+            dimP2 = new THREE.Vector3(p2.x, placement.y, 0);
 
         } else if (type === 'vertical') {
             // Measure dy
             val = Math.abs(p2.y - p1.y) / scale;
             angle = Math.PI / 2;
             // Dim Line is at mouse.x
-            dimP1 = new THREE.Vector3(mouse.x, p1.y, 0);
-            dimP2 = new THREE.Vector3(mouse.x, p2.y, 0);
+            dimP1 = new THREE.Vector3(placement.x, p1.y, 0);
+            dimP2 = new THREE.Vector3(placement.x, p2.y, 0);
 
         } else {
             // Aligned
@@ -1185,27 +852,42 @@ export class MeasurementManager {
             val = len / scale;
 
             // Line through Mouse parallel to Dir
-            // P_proj = P + (Mouse - P).dot(normal) * normal
-            // Actually simpler:
             // Offset vector = (Mouse - P1).dot(normal) * normal
-            const vM = new THREE.Vector3().subVectors(mouse, p1);
+            const vM = new THREE.Vector3().subVectors(placement, p1);
             const distPerp = vM.dot(normal);
             const offset = normal.clone().multiplyScalar(distPerp);
 
             dimP1 = p1.clone().add(offset);
             dimP2 = p2.clone().add(offset);
 
-            // Angle adjustment: Text should be readable
-            // Standard CAD: Horizontal read from bottom, Vertical read from right (Bottom-to-Top).
-            // This means we want Angle in (-PI/2, PI/2].
-            // Specifically, -PI/2 (Top-to-Bottom) should be converted to PI/2 (Bottom-to-Top).
-
+            // Angle adjustment
             if (angle > Math.PI / 2) angle -= Math.PI;
-            if (angle <= -Math.PI / 2) angle += Math.PI; // Changed < to <= to flip -90 to 90
+            if (angle <= -Math.PI / 2) angle += Math.PI;
         }
 
         // Precision Clamp
         if (val < 1e-6) val = 0;
+
+        // --- Calculate Text Position ---
+        let textPos = null;
+        if (fixedTextPos) {
+            // Step 4: fixedTextPos provided. Project onto Dimension Line.
+            const dimDir = new THREE.Vector3().subVectors(dimP2, dimP1).normalize();
+            if (dimDir.lengthSq() > 0) {
+                const vT = new THREE.Vector3().subVectors(fixedTextPos, dimP1);
+                // Project vT onto dimDir
+                const proj = vT.dot(dimDir);
+                // textPos = dimP1 + proj * dimDir
+                // Clamp? User said "Metnin konumu, çizgiye paralel kaydırılabilir olmalıdır."
+                // Doesn't say it must be strictly between arrows.
+                textPos = dimP1.clone().add(dimDir.clone().multiplyScalar(proj));
+            } else {
+                textPos = dimP1.clone();
+            }
+        } else {
+            // Default: Midpoint
+            textPos = new THREE.Vector3().addVectors(dimP1, dimP2).multiplyScalar(0.5);
+        }
 
         return {
             type,
@@ -1213,7 +895,8 @@ export class MeasurementManager {
             text: val.toFixed(2),
             p1, p2,
             dimP1, dimP2,
-            angle
+            angle,
+            textPos // New
         };
     }
 
@@ -1222,128 +905,116 @@ export class MeasurementManager {
         group.userData = { type: 'DIMENSION', value: state.text, isPreview: isPreview, isUserDefined: !isPreview };
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
 
-        const { p1, p2, dimP1, dimP2, angle, text } = state;
+        const { p1, p2, dimP1, dimP2, angle, text, textPos, scale = 1.0 } = state;
 
         // Visual Parameters (User defined)
-        const arrowLen = 3.0;
-        const worldScale = 5.0; // Text Scale
-        // Estimate Text Width (Text aspect usually ~0.6-0.8 per char depending on font, but we have canvas logic)
-        // Canvas width was measured. Here we can approximate.
-        // Or better, create text mesh first and measure? 
-        // We need to create text mesh anyway.
+        // Scale arrows and text by view scale
+        const baseSize = 3.0;
+        const arrowLen = baseSize * scale;
 
+        // --- Calculate Text Geometry for Bounding Box ---
         const color = material.color;
-        const textMesh = this.createTextMesh(text, angle, color, group.userData.tolerance);
+        // Pass scale to createTextMesh
+        const textMesh = this.createTextMesh(text, angle, color, group.userData.tolerance, scale);
 
         // Measure Text in World Space
         textMesh.geometry.computeBoundingBox();
-        const textWidth = textMesh.geometry.boundingBox.max.x - textMesh.geometry.boundingBox.min.x;
+        const localW = textMesh.geometry.boundingBox.max.x - textMesh.geometry.boundingBox.min.x;
+        // The textMesh plane is scaled by 1, but mapped to world coordinates. 
+        // createTextMesh returns a Mesh with PlaneGeometry(width, height).
+        // The width matches world units approximately.
+        const textWidth = localW;
 
-        const dimLength = dimP1.distanceTo(dimP2);
-        const requiredSpace = (arrowLen * 2.2) + textWidth; // 1.1x arrowLen margin per side
-        //console.log(dimLength, requiredSpace);
+        // Set Text Position
+        // Note: textPos is on the dimension line. We might need to offset slightly if configured?
+        // User requirements: "Metnin konumu, çizgiye paralel kaydırılabilir olmalıdır." (Text slides along line)
+        // "Ölçü metninin altındaki ölçü çizgisi, metnin altını kapatmayacak şekilde otomatik olarak iki parçaya bölünmeli"
+        // (Line should be cut under the text)
 
-        const isTight = dimLength < requiredSpace;
+        // textMesh origin is center.
+        textMesh.position.copy(textPos);
+        textMesh.position.z = 0.05; // Slightly above line
+        group.add(textMesh);
 
-        // 1. Dimension Line
-        // If tight, we might want lines extending OUTWARDS for arrows.
-        // Standard: Draw line between witness lines anyway? Yes.
-        const dimGeom = new THREE.BufferGeometry().setFromPoints([dimP1, dimP2]);
-        const dimLine = new THREE.Line(dimGeom, material);
-        if (isPreview) dimLine.computeLineDistances();
-        group.add(dimLine);
+
+        // --- Dimension Line Cutting Logic ---
+        // We have DimP1 <-----------------------> DimP2
+        // Text is at TextPos.
+        // We need to cut the line around TextPos.
+        // Gap = TextWidth + Padding.
+        const gap = textWidth * 0.6; // *0.5 for half, + padding
+
+        // Direction P1->P2
+        const dirFull = new THREE.Vector3().subVectors(dimP2, dimP1);
+        const lenFull = dirFull.length();
+        const dir = dirFull.clone().normalize();
+
+        // Project TextPos onto Line to find where it is relative to P1
+        const vT = new THREE.Vector3().subVectors(textPos, dimP1);
+        const tProj = vT.dot(dir);
+
+        // Define Cut Start/End
+        const tStart = tProj - gap;
+        const tEnd = tProj + gap;
+
+        // Segments:
+        // 1. DimP1 -> (DimP1 + tStart*dir)  [If tStart > 0]
+        // 2. (DimP1 + tEnd*dir) -> DimP2    [If tEnd < lenFull]
+
+        const points = [];
+
+        // Segment 1 (Left of Text)
+        if (tStart > 0) {
+            const startPt = dimP1;
+            const endPtVal = Math.min(tStart, lenFull);
+            const endPt = dimP1.clone().add(dir.clone().multiplyScalar(endPtVal));
+            if (endPtVal > 0) points.push([startPt, endPt]);
+        }
+
+        // Segment 2 (Right of Text)
+        if (tEnd < lenFull) {
+            const startPtVal = Math.max(tEnd, 0);
+            const startPt = dimP1.clone().add(dir.clone().multiplyScalar(startPtVal));
+            const endPt = dimP2;
+            if (startPtVal < lenFull) points.push([startPt, endPt]);
+        }
+
+        // Draw Separate Lines
+        const overlaps = (tStart < lenFull && tEnd > 0);
+
+        if (overlaps) {
+            points.forEach(pair => {
+                const geom = new THREE.BufferGeometry().setFromPoints(pair);
+                const line = new THREE.Line(geom, material);
+                if (isPreview) line.computeLineDistances();
+                group.add(line);
+            });
+        } else {
+            // No overlap (Text is outside limit), draw full line
+            const geom = new THREE.BufferGeometry().setFromPoints([dimP1, dimP2]);
+            const line = new THREE.Line(geom, material);
+            if (isPreview) line.computeLineDistances();
+            group.add(line);
+        }
 
         // 2. Extension Lines (Witness Lines)
         group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p1, dimP1]), material));
         group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([p2, dimP2]), material));
 
         // 3. Arrows
-        const dir = new THREE.Vector3().subVectors(dimP2, dimP1).normalize();
+        // Re-use direction logic from before
+        const isTight = lenFull < (arrowLen * 2.2 + textWidth); // Estimating tight
 
+        // Flip arrows if space is too small
         if (!isTight) {
-            // --- Standard (Inside) ---
-            // Arrows at endpoints, pointing OUT (standard) or IN?
-
-            // Standard CAD Arrow: Tip at endpoint. Body inwards.
-            // <---|--->  (Arrows pointing away from center)
-
-            // Arrow 1 at DimP1: Points Left (Away from P2).
-            // My createArrow(origin, dir...): 
-            // Shape tip at 0,0. Rotated by Dir.
-            // If Dir is "Left", Tip is at Origin, Body is Right. -> >
-            // So if we want < (Tip Left, Body Right), we need Dir to be Right?
-            // Wait. Shape: Tip 0,0. Body -X.
-            // If rotation 0 (Right): Tip 0,0. Body Left (<). Visual: <
-            // So default is Pointing Right?
-            // createArrow code: angle = atan2(dir.y, dir.x).
-            // If dir=(1,0) [Right]. Angle=0. Mesh rot=0. Shape body (-X) is Left of Origin. 
-            // Visual:   <|  (Tip at Origin).
-            // This is an arrow pointing RIGHT.
-
-            // We want arrow at DimP1 (Left end) to point LEFT (<).
-            // So we need visual <|.
-            // That matches Dir=(1,0) (Right)? No.
-            // If visual is <|, it "points" Right (Tip is Right).
-            // We want Tip at P1, pointing Left. <----
-            // So body should be to the Right of P1.
-            // My shape body is -X (Left).
-            // So if I rotate 180 (Dir Left -1,0):
-            // Body becomes +X (Right). Tip at Origin.
-            // Visual: |> (Points Left).
-            // So to point Left, I need Dir Left (-1,0).
-
-            // At DimP1 (Left): We want point Left (<). Dir = P1-P2 (Left)? No P1-P2 is usually Left if P1 is Left?
-            // Let's assume P1 is Left, P2 is Right.
-            // Dir (P1->P2) is Right.
-            // At P1: We want < (Point Left). Need Dir Left (-Dir).
-            // At P2: We want > (Point Right). Need Dir Right (+Dir).
-
-            // Previous code: 
-            // Arrow 1 (P1): negate(). -> Left. Correct.
-            // Arrow 2 (P2): dir. -> Right. Correct.
-
-            // BUT user said "flip arrows".
-
-            // Arrows INSIDE (Standard):
-            // |<-- Text -->|
-            // At P1: Arrow points Right (>).
-            // At P2: Arrow points Left (<).
-            // This means Tip at P1, pointing P2.
-            // To point Right: Dir Right (+Dir).
-            // To point Left: Dir Left (-Dir).
-
-            // My Previous Code Logic Check:
-            // Arrow 1 (P1): createArrow(dimP1, dir.clone().negate() ... ) -> Points Left.
-            // This creates |<--- --- >|. Arrows pointing OUT.
-            // This is "Arrows Outside"? No this is "Arrows Inside pointing Out".
-            // CAD usually is |<-- -->|. Tips at line ends.
-            // So P1 arrow points Right. P2 arrow points Left.
-
-            // So for Inside (Standard):
-            // Arrow 1 (P1): Use +Dir (Right).
-            // Arrow 2 (P2): Use -Dir (Left).
-
+            // Inside
             group.add(this.createArrow(dimP1, dir.clone().negate(), arrowLen, color)); // P1: Left (<)
             group.add(this.createArrow(dimP2, dir, arrowLen, color));
-
         } else {
-
-            // --- Tight (Outside) ---
-            // Arrows outside the witness lines, pointing IN.
-            // ->|   |<-
-
-            // At P1: Arrow is to the Left of P1. Points Right.
-            // We need to move Origin?
-            // Yes, arrow is placed OUTSIDE.
-            // Tip must be at P1.
-            // User Preference: Arrows pointing OUTWARDS (<- ->)
-
-            // P1 (Left): Arrow points Left (<). Use -Dir.
-            // P2 (Right): Arrow points Right (>). Use +Dir.
-
-            // P2: Right (>)
+            // Outside
             group.add(this.createArrow(dimP1, dir, arrowLen, color));
             group.add(this.createArrow(dimP2, dir.clone().negate(), arrowLen, color));
+
             // Extra lines holding the arrows outside
             const extLen = arrowLen * 1.5;
             const out1 = dimP1.clone().sub(dir.clone().multiplyScalar(extLen));
@@ -1352,43 +1023,6 @@ export class MeasurementManager {
             group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([out1, dimP1]), material));
             group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([dimP2, out2]), material));
         }
-
-        // 4. Text Label
-        // Position at Midpoint
-        const mid = new THREE.Vector3().addVectors(dimP1, dimP2).multiplyScalar(0.5);
-
-        // Offset
-        // World Scale Height is 5.0. Half-height is 2.5. We need > 2.5 to clear execution.
-        const offsetDist = 3.5; // Gap increased from 1.5 to 3.5 to clear text height
-        let textOffset = new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(offsetDist);
-
-        // Smart Text Placement: Ensure text is "Outside" (Away from Object)
-        // Check "Pull Direction" from Object (p1, p2) to Dimension Line (dimP1, dimP2)
-        const objMid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-        const dimMid = new THREE.Vector3().addVectors(dimP1, dimP2).multiplyScalar(0.5);
-        const pullDir = new THREE.Vector3().subVectors(dimMid, objMid);
-
-        // If Pull Direction opposes the default Text Offset, flip the offset.
-        // Dot product < 0 means they are opposite.
-        // Note: Default textOffset is usually "Up". If Pull is "Down", we want text "Down".
-        // If Pull is "Down" and Offset is "Up", angle is > 90.
-        // Correct logic: TextOffset should align with PullDir?
-        // Or TextOffset should just NOT point towards Object.
-        // Simple check: If Dot(PullDir, TextOffset) < 0, flip TextOffset.
-
-        if (pullDir.lengthSq() > 0.001) { // Avoid zero vector issues
-            if (pullDir.dot(textOffset) < 0) {
-                textOffset.negate();
-            }
-        }
-
-        // If tight, maybe move text UP?
-        // User didn't specify text move, just arrow flip.
-
-        textMesh.position.copy(mid).add(textOffset);
-        textMesh.position.z = 0.05;
-
-        group.add(textMesh);
 
         return group;
     }
@@ -1467,19 +1101,26 @@ export class MeasurementManager {
     }
 
     // Replace Sprite with Mesh for rotation
-    createTextMesh(text, angle, colorVal, tolerance) {
+    createTextMesh(text, angle, colorVal, tolerance, scale = 1.0) {
         const fontsize = 48; // Increased resolution
         const fontface = "Arial";
-        const scale = 1; // high-res canvas
+        const resScale = 1; // high-res canvas
 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
 
         // Measure Main Text
-        ctx.font = `Bold ${fontsize * scale}px ${fontface}`;
+        ctx.font = `Bold ${fontsize * resScale}px ${fontface}`;
         const metrics = ctx.measureText(text);
         const w = metrics.width;
-        const h = fontsize * scale * 1.4; // Base height
+        const h = fontsize * resScale * 1.4; // Base height
+
+        // ... (Tolerance logic same) ...
+
+        const aspect = canvas.width / canvas.height;
+        // World Scale for text height
+        const baseWorldScale = 5.0;
+        const worldScale = baseWorldScale * scale;
 
         // Tolerance Calculation
         let tolW = 0;
@@ -1545,9 +1186,6 @@ export class MeasurementManager {
         tex.minFilter = THREE.LinearFilter;
         tex.magFilter = THREE.LinearFilter;
 
-        const aspect = canvas.width / canvas.height;
-        // World Scale for text height
-        const worldScale = 5.0; // Increased from 0.6
         const geom = new THREE.PlaneGeometry(aspect * worldScale, worldScale);
         const mat = new THREE.MeshBasicMaterial({
             map: tex,
