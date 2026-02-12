@@ -177,8 +177,16 @@ export class MeasurementManager {
         // Handled by updatePreview called explicitly from main
     }
 
-    handleClick(point, hitObject) {
+    handleClick(point, intersectOrObject) {
         if (!this.activeTool) return;
+
+        // Extract Object and Index (if available)
+        let hitObject = intersectOrObject;
+        let hitIndex = null;
+        if (intersectOrObject && intersectOrObject.object) {
+            hitObject = intersectOrObject.object;
+            hitIndex = intersectOrObject.index;
+        }
 
         // Radius & Diameter Tools (New 3-Step)
         if (this.activeTool === 'radius' || this.activeTool === 'diameter') {
@@ -341,59 +349,171 @@ export class MeasurementManager {
             }
         }
 
+        // Angle Tool
         if (this.activeTool === 'angle') {
             const p = point.clone();
+
+            // Mode A: 2-Line Selection (Priority if Object Clicked)
             const validTypes = ['LINE', 'LWPOLYLINE', 'POLYLINE'];
+
             if (!this.lineSelection && this.points.length === 0 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
-                this.lineSelection = [hitObject];
+                // Start Line Selection Mode
+                // Store object, click point AND segment index
+                this.lineSelection = [{ object: hitObject, point: p, index: hitIndex }];
+                console.log("Angle: Line 1 Selected", hitIndex);
+                this.onStatusUpdate('Angle: Line 1 selected. Select Line 2.');
                 return;
             }
+
             if (this.lineSelection && this.lineSelection.length === 1 && hitObject && hitObject.userData && validTypes.includes(hitObject.userData.type)) {
-                this.lineSelection.push(hitObject);
-                const l1 = this.lineSelection[0], l2 = this.lineSelection[1];
-                const getLinePts = (line) => {
-                    const pos = line.geometry.attributes.position;
-                    // Fix: Handle BufferGeometry safely and Apply World Matrix
-                    const p1 = new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0));
-                    const p2 = new THREE.Vector3(pos.getX(1), pos.getY(1), pos.getZ(1));
-                    p1.applyMatrix4(line.matrixWorld);
-                    p2.applyMatrix4(line.matrixWorld);
-                    return [p1, p2];
+                // Line 2 Selected
+                this.lineSelection.push({ object: hitObject, point: p, index: hitIndex });
+                console.log("Angle: Line 2 Selected", hitIndex);
+
+                // Compute Intersection
+                const sel1 = this.lineSelection[0];
+                const sel2 = this.lineSelection[1];
+                const l1 = sel1.object;
+                const l2 = sel2.object;
+
+                // Robust Helper to get EXACT line segment using Raycast Index
+                const getSegment = (lineObj, clickPoint, segmentIndex) => {
+                    const pos = lineObj.geometry.attributes.position;
+                    // If segmentIndex is valid number, use it!
+                    // Note: Check bounds just in case
+                    if (typeof segmentIndex === 'number' && segmentIndex >= 0 && segmentIndex < pos.count) {
+                        const p1Local = new THREE.Vector3(pos.getX(segmentIndex), pos.getY(segmentIndex), pos.getZ(segmentIndex));
+                        // For LineSegments, i+1. For LineStrip, i+1. 
+                        // Raycaster returns start index of segment.
+                        const idx2 = segmentIndex + 1;
+                        if (idx2 < pos.count) {
+                            const p2Local = new THREE.Vector3(pos.getX(idx2), pos.getY(idx2), pos.getZ(idx2));
+                            p1Local.applyMatrix4(lineObj.matrixWorld);
+                            p2Local.applyMatrix4(lineObj.matrixWorld);
+                            return [p1Local, p2Local];
+                        }
+                    }
+
+                    // Fallback: Closest Segment Logic (if index missing or invalid)
+                    // Copied from previous logic
+                    const isLineSegments = lineObj.isLineSegments;
+                    const cnt = pos.count;
+                    let bestDist = Infinity;
+                    let bestSeg = [new THREE.Vector3(), new THREE.Vector3()];
+                    const stride = isLineSegments ? 2 : 1;
+                    const limit = isLineSegments ? cnt : cnt - 1;
+                    const p1Local = new THREE.Vector3();
+                    const p2Local = new THREE.Vector3();
+                    const p1World = new THREE.Vector3();
+                    const p2World = new THREE.Vector3();
+
+                    for (let i = 0; i < limit; i += stride) {
+                        p1Local.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+                        p2Local.set(pos.getX(i + 1), pos.getY(i + 1), pos.getZ(i + 1));
+
+                        p1World.copy(p1Local).applyMatrix4(lineObj.matrixWorld);
+                        p2World.copy(p2Local).applyMatrix4(lineObj.matrixWorld);
+
+                        const vW = new THREE.Vector3().subVectors(p2World, p1World);
+                        const vP = new THREE.Vector3().subVectors(clickPoint, p1World);
+                        const lenSq = vW.lengthSq();
+                        const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, vP.dot(vW) / lenSq));
+                        const proj = p1World.clone().add(vW.multiplyScalar(t));
+                        const dist = proj.distanceToSquared(clickPoint);
+
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestSeg[0].copy(p1World);
+                            bestSeg[1].copy(p2World);
+                        }
+                    }
+                    return bestSeg;
                 };
-                const [l1s, l1e] = getLinePts(l1);
-                const [l2s, l2e] = getLinePts(l2);
-                const x1 = l1s.x, y1 = l1s.y, x2 = l1e.x, y2 = l1e.y;
-                const x3 = l2s.x, y3 = l2s.y, x4 = l2e.x, y4 = l2e.y;
+
+                const [p1, p2] = getSegment(l1, sel1.point, sel1.index); // Line 1
+                const [p3, p4] = getSegment(l2, sel2.point, sel2.index); // Line 2
+
+                // 2D Intersection (XY Plane)
+                const x1 = p1.x, y1 = p1.y, x2 = p2.x, y2 = p2.y;
+                const x3 = p3.x, y3 = p3.y, x4 = p4.x, y4 = p4.y;
+
                 const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+
                 if (Math.abs(denom) > 1e-9) {
                     const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
-                    const intersection = new THREE.Vector3(x1 + ua * (x2 - x1), y1 + ua * (y2 - y1), 0);
+
+                    // Intersection Point (2D)
+                    const ix = x1 + ua * (x2 - x1);
+                    const iy = y1 + ua * (y2 - y1);
+
+                    // Interpolate Z
+                    // Z = Z1 + ua * (Z2 - Z1)
+                    const iz = p1.z + ua * (p2.z - p1.z);
+
+                    const intersection = new THREE.Vector3(ix, iy, iz);
+
+                    // Determine Ends based on Click Side
+                    const vClick1 = new THREE.Vector3().subVectors(sel1.point, intersection);
+                    const vEnd1 = new THREE.Vector3().subVectors(p1, intersection);
+                    const vEnd2 = new THREE.Vector3().subVectors(p2, intersection);
+                    // Use dot product to find which endpoint vector aligns with click vector
+                    const arm1End = vClick1.dot(vEnd1) > vClick1.dot(vEnd2) ? p1 : p2;
+
+                    // Vector from I to Click2
+                    const vClick2 = new THREE.Vector3().subVectors(sel2.point, intersection);
+                    const vEnd3 = new THREE.Vector3().subVectors(p3, intersection);
+                    const vEnd4 = new THREE.Vector3().subVectors(p4, intersection);
+                    const arm2End = vClick2.dot(vEnd3) > vClick2.dot(vEnd4) ? p3 : p4;
+
+                    // Push Points: Center, Arm1End, Arm2End
                     this.points.push(intersection);
-                    this.points.push(l1e);
-                    this.points.push(l2e);
+                    this.points.push(arm1End);
+                    this.points.push(arm2End);
+
+                } else {
+                    console.log("Angle: Lines are parallel");
+                    this.onStatusUpdate('Lines are parallel. Cannot measure angle.');
+                    this.lineSelection = null;
+                    return;
                 }
+
                 this.lineSelection = null;
-                return;
+                return; // Wait for next click (Placement) which will trigger length===3 block
             }
+
             if (this.points.length === 0) this.points.push(p);
             else if (this.points.length === 1) this.points.push(p);
             else if (this.points.length === 2) this.points.push(p);
             else if (this.points.length === 3) {
                 const center = this.points[0], start = this.points[1], end = this.points[2], placement = p;
                 const visual = this.createAngleVisual(center, start, end, placement, false);
+
+                // Calculate Value
+                // Re-calc vectors based on arms
                 const v1 = new THREE.Vector3().subVectors(start, center);
                 const v2 = new THREE.Vector3().subVectors(end, center);
-                let diff = Math.atan2(v2.y, v2.x) - Math.atan2(v1.y, v1.x);
-                if (diff < 0) diff += Math.PI * 2;
+
+                // Use the visual calculation logic for value if possible, but simplest:
+                // abs(angle) is not enough, we need the visual sector angle.
+                // createAngleVisual returns value in userData.
+                const val = visual.userData.value || "0°";
+
+                const mData = {
+                    type: 'angle',
+                    center, start, end, placement,
+                    value: val.replace('°', ''),
+                    visual
+                };
 
                 if (this.onMeasurementAdded) {
-                    this.onMeasurementAdded({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+                    this.onMeasurementAdded(mData);
                 } else {
                     this.group.add(visual);
-                    this.measurements.push({ type: 'angle', center, start, end, placement, value: (diff * 180 / Math.PI).toFixed(1), visual });
+                    this.measurements.push(mData);
                 }
                 this.points = [];
                 this.clearTemp();
+                this.onStatusUpdate(`Angle: ${val}`);
             }
         }
     }
