@@ -66,7 +66,8 @@ export class WeightManager {
 | ŞEK. FAKTÖRÜ | %val-shapefactor%  | DIŞ ÇEVRE (mm) | %val-perimeter%  | TOP. ÇEVRE (mm) | %val-totalperimeter% |
 +--------------+-----------+----------------+----------+------------------+----------+
 | EKST. OR.    | %val-extratio%     | PRES           | %val-pres%       | FIGUR           | %val-figur%          |
-+--------------+-----------+----------------+----------+------------------+----------+`;
++--------------+-----------+----------------+----------+------------------+----------+
+NOT: Açı toleransları mm (sentil) cinsinden verilmiştir.`;
     }
 
     init() {

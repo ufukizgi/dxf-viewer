@@ -635,7 +635,7 @@ export class MeasurementManager {
 
     createAngleVisual(center, start, end, placement, isPreview) {
         const group = new THREE.Group();
-        group.userData = { type: 'DIMENSION', value: "Angle", isPreview: isPreview }; // Temp value, update later
+        group.userData = { type: 'DIMENSION', subtype: 'angle', value: "Angle", isPreview: isPreview }; // Temp value, update later
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
         const color = material.color;
 
@@ -1022,7 +1022,7 @@ export class MeasurementManager {
 
     createDimensionVisual(state, isPreview) {
         const group = new THREE.Group();
-        group.userData = { type: 'DIMENSION', value: state.text, isPreview: isPreview, isUserDefined: !isPreview };
+        group.userData = { type: 'DIMENSION', subtype: 'linear', value: state.text, isPreview: isPreview, isUserDefined: !isPreview };
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
 
         const { p1, p2, dimP1, dimP2, angle, text, textPos, scale = 1.0 } = state;
@@ -1433,7 +1433,7 @@ export class MeasurementManager {
         const prefix = (type === 'radius') ? 'R' : 'Ø';
         const textStr = prefix + valScaled.toFixed(2);
 
-        group.userData = { type: 'DIMENSION', value: textStr, isPreview: isPreview, isUserDefined: !isPreview };
+        group.userData = { type: 'DIMENSION', subtype: type, value: textStr, isPreview: isPreview, isUserDefined: !isPreview };
         const material = isPreview ? this.previewMaterial : this.lineMaterial;
         const color = material.color;
 

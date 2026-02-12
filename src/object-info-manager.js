@@ -699,18 +699,32 @@ export class ObjectInfoManager {
         this._tolCurrentObject = object;
         this._tolStandardId = standardId;
 
-        // Get Measurement Value
+        // Get Measurement Value & Type
         let dimension = 0;
+        let dimensionType = 'linear';
+
         // Logic to extract value from object
         if (object.userData.type === 'DIMENSION' || (object.parent && object.parent.userData.type === 'DIMENSION')) {
-            // value is usually stored in userData.value (e.g. 50.123)
-            // Check measurement-manager code: `dimension.userData.value = dist.toFixed(2);` It's a string?
             const dimObj = object.userData.type === 'DIMENSION' ? object : object.parent;
-            dimension = parseFloat(dimObj.userData.value);
+
+            // Extract Subtype
+            if (dimObj.userData.subtype) {
+                dimensionType = dimObj.userData.subtype;
+            }
+
+            // Extract Numeric Value
+            const textVal = String(dimObj.userData.value);
+            // Remove non-numeric prefixes/suffixes (like 'R', 'Ø', '°') but keep decimal point
+            const match = textVal.match(/-?\d+(\.\d+)?/);
+            if (match) {
+                dimension = parseFloat(match[0]);
+            }
         } else if (object.userData.type === 'LINE') {
             dimension = this.calculateLength(object);
+            dimensionType = 'linear';
         }
         this._tolDimension = dimension;
+        this._tolDimensionType = dimensionType;
 
         // Get Material and Profile Type from WeightManager
         let materialName = 'Unknown';
@@ -783,9 +797,45 @@ export class ObjectInfoManager {
         const elDim = document.getElementById('tol-debug-dim');
         if (elMat) elMat.textContent = `${materialId} [${alloyGroup}] (CD: ${cdValue.toFixed(1)})`;
         if (elPrf) elPrf.textContent = profileType.toUpperCase();
-        if (elDim) elDim.textContent = dimension.toFixed(2);
+        if (elDim) elDim.textContent = `${dimension.toFixed(2)} (${this._tolDimensionType})`;
 
-        // Show
+        if (elDim) elDim.textContent = `${dimension.toFixed(2)} (${this._tolDimensionType})`;
+
+        // Check if Angular -> Bypass Modal
+        if (this._tolDimensionType === 'angle') {
+            // Directly Prompt for L
+            // Wait for modal to be ready? No, we just don't show it if we hijack.
+            // But we need the context data set above.
+
+            // Allow a brief timeout or direct call?
+            // Let's hide the modal if it was somehow shown, or just not show it.
+            // Re-use logic from handleToleranceSelection or similar.
+
+            const input = prompt("Lütfen kısa kenar uzunluğunu (mm) giriniz:", "0");
+            if (input === null) {
+                // User Cancelled selection of standard
+                // We should revert standard selection?
+                this.hideToleranceModal();
+                return;
+            }
+
+            const lShort = parseFloat(input);
+            const result = calculateTolerance(this._tolStandardId, this._tolMaterialId, this._tolProfileType, this._tolDimension, null, this._tolCD, 'angle', lShort);
+
+            if (result !== null) {
+                if (this._tolCallback) {
+                    this._tolCallback(result, result);
+                }
+            } else {
+                alert("Açı toleransı hesaplanamadı.");
+            }
+
+            // Clean up
+            this.hideToleranceModal(); // Keeps things clean
+            return;
+        }
+
+        // Show (Only for Linear/Visuals that need selection)
         modal.classList.remove('hidden');
     }
 
@@ -812,15 +862,27 @@ export class ObjectInfoManager {
             const eVal = parseFloat(input);
 
             // Base H
-            const base = calculateTolerance(std, alloy, type, dim, 'H', cd);
+            const base = calculateTolerance(std, alloy, type, dim, 'H', cd, this._tolDimensionType);
             if (base !== null) {
                 result = calculateOpenEndTolerance(base, eVal);
             } else {
                 alert("H toleransı hesaplanamadı.");
                 return;
             }
+        } else if (this._tolDimensionType === 'angle') {
+            // For Angle, we need Short Side Length (L)
+            const input = prompt("Lütfen kısa kenar uzunluğunu (mm) giriniz:", "0");
+            if (input === null) return;
+            const lShort = parseFloat(input);
+
+            // Calculate
+            result = calculateTolerance(std, alloy, type, dim, cls, cd, 'angle', lShort);
+            if (result === null) {
+                alert("Açı toleransı hesaplanamadı.");
+                return;
+            }
         } else {
-            result = calculateTolerance(std, alloy, type, dim, cls, cd);
+            result = calculateTolerance(std, alloy, type, dim, cls, cd, this._tolDimensionType);
         }
 
         if (result !== null) {
