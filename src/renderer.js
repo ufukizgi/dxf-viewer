@@ -939,7 +939,9 @@ export class Renderer {
         this.drawArrow(d2, arrowAngle, arrowSize);
 
         // Text
+        console.log("DIMENSION ENTITY:", entity);
         let textVal = entity.text;
+        let isOverridden = false;
         if (!textVal || textVal === '<>') {
             // Calc distance
             // If rotated, distance is projected distance? 
@@ -952,6 +954,16 @@ export class Renderer {
             textVal = textVal.replace('<>', dist.toFixed(2));
             // Remove formatting codes like \P, \A1; etc roughly
             textVal = textVal.replace(/\\[A-Za-z0-9]+;/g, '');
+        } else {
+            isOverridden = true;
+            // Remove formatting codes like \P, \A1; etc roughly
+            textVal = textVal.replace(/\\[A-Za-z0-9]+;/g, '');
+        }
+
+        if (textVal) {
+            textVal = textVal.replace(/%%d/gi, '°');
+            textVal = textVal.replace(/%%p/gi, '±');
+            textVal = textVal.replace(/%%c/gi, 'Ø');
         }
 
         // Text pos: middle of D1-D2, or entity.midX/midY if present
@@ -969,6 +981,9 @@ export class Renderer {
         this.ctx.font = `${this.textScale * this.viewport.scale}px Arial`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'bottom';
+        if (isOverridden) {
+            this.ctx.fillStyle = 'red';
+        }
         this.ctx.fillText(textVal, 0, -3);
         this.ctx.restore();
     }

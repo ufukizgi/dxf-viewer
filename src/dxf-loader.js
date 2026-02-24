@@ -1754,7 +1754,23 @@ export class DxfLoader {
             return Math.abs(ddx * u.x + ddy * u.y);
         })();
 
-        const text = measurementValue.toFixed(2);
+        let textVal = entity.text;
+        let isOverridden = false;
+        if (!textVal || textVal === '<>') {
+            textVal = measurementValue.toFixed(2);
+        } else if (textVal.includes('<>')) {
+            textVal = textVal.replace('<>', measurementValue.toFixed(2));
+            textVal = textVal.replace(/\\[A-Za-z0-9]+;/g, '');
+        } else {
+            isOverridden = true;
+            textVal = textVal.replace(/\\[A-Za-z0-9]+;/g, '');
+        }
+
+        if (textVal) {
+            textVal = textVal.replace(/%%d/gi, '°');
+            textVal = textVal.replace(/%%p/gi, '±');
+            textVal = textVal.replace(/%%c/gi, 'Ø');
+        }
 
         // ---- TEXT POSITION: constant gap from dimension line ----
         // Project textPt onto dimension line (through dimPt1, direction u)
@@ -1795,7 +1811,8 @@ export class DxfLoader {
         }
 
         // text sprite
-        const textSprite = this.createTextSprite(text, vars.DIMTXT, color, entity.styleName);
+        const textColor = isOverridden ? 0xFF0000 : color;
+        const textSprite = this.createTextSprite(textVal, vars.DIMTXT, textColor, entity.styleName);
 
         // place centered on computed pos (sprite is already centered)
         textSprite.position.set(textPos.x, textPos.y, 0);
