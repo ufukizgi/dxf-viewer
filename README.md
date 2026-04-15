@@ -2,7 +2,7 @@
 
 A powerful, web-based DXF/DWG file viewer built with Three.js and Vanilla JavaScript. This application allows users to view, analyze, measure, and calculate weights for AutoCAD files directly in the browser with a modern, dark-themed UI.
 
-[**🚀 Live Demo**](https://izgi.me/site/dxf-viewer)
+[**🚀 Live Demo**](https://izgi.me/cad)
 
 ![DXF Viewer Screenshot](screenshot.PNG) *<!-- Replace with actual screenshot -->*
 
